@@ -1,0 +1,462 @@
+---
+import CodeBlock from '../CodeBlock.astro';
+import Callout from '../Callout.astro';
+import DocSection from '../DocSection.astro';
+import DocImage from '../DocImage.astro';
+import DocList from '../DocList.astro';
+---
+
+<article class="doc-article">
+  <h1 class="doc-article__title">FastAPI REST</h1>
+
+  <p class="doc-article__intro">
+    Guía completa para construir APIs REST de alto rendimiento con FastAPI.
+    Cubre desde la estructura inicial del proyecto hasta autenticación, validación
+    con Pydantic, operaciones CRUD y manejo de errores en producción.
+  </p>
+
+  <!-- Project Setup -->
+  <section id="project-setup">
+    <h2 class="doc-article__h2">
+      Project Setup
+      <span class="doc-article__badge">Essentials</span>
+    </h2>
+    <p>
+      FastAPI es un framework moderno de Python basado en <strong>type hints</strong> estándar.
+      Utiliza <code class="doc-inline-code">Starlette</code> para la parte web y
+      <code class="doc-inline-code">Pydantic</code> para la validación de datos, logrando un
+      rendimiento comparable a Node.js y Go.
+    </p>
+
+    <h3 class="doc-article__h3">Estructura del proyecto</h3>
+
+    <CodeBlock lang="text">
+      <Fragment set:html={`<span class="token-comment">Estructura recomendada para un proyecto FastAPI</span>
+
+<span class="token-func">api-project/</span>
+├── <span class="token-func">app/</span>
+│   ├── <span class="token-string">__init__.py</span>
+│   ├── <span class="token-string">main.py</span>              <span class="token-comment"># Entry point, CORS, lifespan</span>
+│   ├── <span class="token-string">config.py</span>            <span class="token-comment"># Settings con pydantic-settings</span>
+│   ├── <span class="token-string">database.py</span>          <span class="token-comment"># Engine, SessionLocal, Base</span>
+│   ├── <span class="token-func">models/</span>              <span class="token-comment"># SQLAlchemy models</span>
+│   │   ├── <span class="token-string">__init__.py</span>
+│   │   ├── <span class="token-string">user.py</span>
+│   │   └── <span class="token-string">project.py</span>
+│   ├── <span class="token-func">schemas/</span>             <span class="token-comment"># Pydantic schemas</span>
+│   │   ├── <span class="token-string">__init__.py</span>
+│   │   ├── <span class="token-string">user.py</span>
+│   │   └── <span class="token-string">project.py</span>
+│   ├── <span class="token-func">routers/</span>             <span class="token-comment"># APIRouter modules</span>
+│   │   ├── <span class="token-string">__init__.py</span>
+│   │   ├── <span class="token-string">users.py</span>
+│   │   └── <span class="token-string">projects.py</span>
+│   ├── <span class="token-func">services/</span>            <span class="token-comment"># Business logic layer</span>
+│   │   └── <span class="token-string">user_service.py</span>
+│   └── <span class="token-func">middleware/</span>          <span class="token-comment"># Custom middleware</span>
+│       └── <span class="token-string">auth.py</span>
+├── <span class="token-func">tests/</span>
+├── <span class="token-string">requirements.txt</span>
+├── <span class="token-string">Dockerfile</span>
+└── <span class="token-string">.env</span>`} />
+    </CodeBlock>
+
+    <h3 class="doc-article__h3">Instalación y dependencias</h3>
+    <CodeBlock lang="bash">
+      <Fragment set:html={`<span class="token-comment"># Crear entorno virtual</span>
+python -m venv venv
+source venv/bin/activate  <span class="token-comment"># Linux/Mac</span>
+venv\\Scripts\\activate     <span class="token-comment"># Windows</span>
+
+<span class="token-comment"># Instalar dependencias core</span>
+pip install <span class="token-string">fastapi[standard]</span> <span class="token-string">uvicorn[standard]</span>
+pip install <span class="token-string">sqlalchemy</span> <span class="token-string">alembic</span> <span class="token-string">pydantic-settings</span>
+pip install <span class="token-string">python-jose[cryptography]</span> <span class="token-string">passlib[bcrypt]</span>
+
+<span class="token-comment"># Iniciar servidor de desarrollo</span>
+uvicorn app.main:app --reload --host <span class="token-string">0.0.0.0</span> --port <span class="token-string">8000</span>`} />
+    </CodeBlock>
+
+    <h3 class="doc-article__h3">Entry point (main.py)</h3>
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-keyword">from</span> contextlib <span class="token-keyword">import</span> asynccontextmanager
+<span class="token-keyword">from</span> fastapi <span class="token-keyword">import</span> FastAPI
+<span class="token-keyword">from</span> fastapi.middleware.cors <span class="token-keyword">import</span> CORSMiddleware
+
+<span class="token-keyword">from</span> app.config <span class="token-keyword">import</span> settings
+<span class="token-keyword">from</span> app.database <span class="token-keyword">import</span> engine, Base
+<span class="token-keyword">from</span> app.routers <span class="token-keyword">import</span> users, projects
+
+@<span class="token-func">asynccontextmanager</span>
+<span class="token-keyword">async def</span> <span class="token-func">lifespan</span>(app: FastAPI):
+    <span class="token-comment"># Startup: crear tablas, inicializar conexiones</span>
+    Base.metadata.create_all(bind=engine)
+    <span class="token-keyword">yield</span>
+    <span class="token-comment"># Shutdown: cerrar conexiones</span>
+    engine.dispose()
+
+app = <span class="token-func">FastAPI</span>(
+    title=<span class="token-string">"Cookbooks API"</span>,
+    version=<span class="token-string">"1.4.2"</span>,
+    lifespan=lifespan,
+    docs_url=<span class="token-string">"/docs"</span>,
+    redoc_url=<span class="token-string">"/redoc"</span>,
+)
+
+<span class="token-comment"># CORS</span>
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_credentials=<span class="token-string">True</span>,
+    allow_methods=[<span class="token-string">"*"</span>],
+    allow_headers=[<span class="token-string">"*"</span>],
+)
+
+<span class="token-comment"># Registrar routers</span>
+app.include_router(users.router, prefix=<span class="token-string">"/api/v1"</span>, tags=[<span class="token-string">"users"</span>])
+app.include_router(projects.router, prefix=<span class="token-string">"/api/v1"</span>, tags=[<span class="token-string">"projects"</span>])`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Routing & Endpoints -->
+  <section id="routing-endpoints">
+    <h2 class="doc-article__h2">Routing & Endpoints</h2>
+    <p>
+      FastAPI usa <code class="doc-inline-code">APIRouter</code> para organizar endpoints en módulos.
+      Cada router agrupa operaciones relacionadas con un recurso específico.
+    </p>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-keyword">from</span> fastapi <span class="token-keyword">import</span> APIRouter, Depends, HTTPException, status, Query
+<span class="token-keyword">from</span> sqlalchemy.orm <span class="token-keyword">import</span> Session
+
+<span class="token-keyword">from</span> app.database <span class="token-keyword">import</span> get_db
+<span class="token-keyword">from</span> app.schemas.user <span class="token-keyword">import</span> UserCreate, UserRead, UserUpdate
+<span class="token-keyword">from</span> app.services <span class="token-keyword">import</span> user_service
+
+router = <span class="token-func">APIRouter</span>(prefix=<span class="token-string">"/users"</span>)
+
+<span class="token-comment"># GET /api/v1/users — Listar con paginación</span>
+@router.<span class="token-func">get</span>(<span class="token-string">"/"</span>, response_model=list[UserRead])
+<span class="token-keyword">async def</span> <span class="token-func">list_users</span>(
+    skip: <span class="token-keyword">int</span> = <span class="token-func">Query</span>(<span class="token-string">0</span>, ge=<span class="token-string">0</span>),
+    limit: <span class="token-keyword">int</span> = <span class="token-func">Query</span>(<span class="token-string">25</span>, ge=<span class="token-string">1</span>, le=<span class="token-string">100</span>),
+    db: Session = <span class="token-func">Depends</span>(get_db),
+):
+    <span class="token-keyword">return</span> user_service.<span class="token-func">get_users</span>(db, skip=skip, limit=limit)
+
+<span class="token-comment"># GET /api/v1/users/{user_id} — Detalle</span>
+@router.<span class="token-func">get</span>(<span class="token-string">"/{user_id}"</span>, response_model=UserRead)
+<span class="token-keyword">async def</span> <span class="token-func">get_user</span>(user_id: <span class="token-keyword">int</span>, db: Session = <span class="token-func">Depends</span>(get_db)):
+    user = user_service.<span class="token-func">get_user</span>(db, user_id)
+    <span class="token-keyword">if not</span> user:
+        <span class="token-keyword">raise</span> <span class="token-func">HTTPException</span>(status_code=<span class="token-string">404</span>, detail=<span class="token-string">"User not found"</span>)
+    <span class="token-keyword">return</span> user
+
+<span class="token-comment"># POST /api/v1/users — Crear</span>
+@router.<span class="token-func">post</span>(<span class="token-string">"/"</span>, response_model=UserRead, status_code=status.HTTP_201_CREATED)
+<span class="token-keyword">async def</span> <span class="token-func">create_user</span>(user_in: UserCreate, db: Session = <span class="token-func">Depends</span>(get_db)):
+    <span class="token-keyword">return</span> user_service.<span class="token-func">create_user</span>(db, user_in)
+
+<span class="token-comment"># PATCH /api/v1/users/{user_id} — Actualizar parcial</span>
+@router.<span class="token-func">patch</span>(<span class="token-string">"/{user_id}"</span>, response_model=UserRead)
+<span class="token-keyword">async def</span> <span class="token-func">update_user</span>(
+    user_id: <span class="token-keyword">int</span>,
+    user_in: UserUpdate,
+    db: Session = <span class="token-func">Depends</span>(get_db),
+):
+    <span class="token-keyword">return</span> user_service.<span class="token-func">update_user</span>(db, user_id, user_in)
+
+<span class="token-comment"># DELETE /api/v1/users/{user_id}</span>
+@router.<span class="token-func">delete</span>(<span class="token-string">"/{user_id}"</span>, status_code=status.HTTP_204_NO_CONTENT)
+<span class="token-keyword">async def</span> <span class="token-func">delete_user</span>(user_id: <span class="token-keyword">int</span>, db: Session = <span class="token-func">Depends</span>(get_db)):
+    user_service.<span class="token-func">delete_user</span>(db, user_id)`} />
+    </CodeBlock>
+
+    <div class="doc-table-wrapper custom-scroll">
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th>Método</th>
+            <th>Endpoint</th>
+            <th>Descripción</th>
+            <th>Status Code</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="doc-method">GET</span></td>
+            <td><code class="doc-inline-code doc-inline-code--cyan">/users</code></td>
+            <td>Listar usuarios con paginación</td>
+            <td>200</td>
+          </tr>
+          <tr>
+            <td><span class="doc-method">GET</span></td>
+            <td><code class="doc-inline-code doc-inline-code--cyan">/users/{'{id}'}</code></td>
+            <td>Obtener usuario por ID</td>
+            <td>200 / 404</td>
+          </tr>
+          <tr>
+            <td><span class="doc-method">POST</span></td>
+            <td><code class="doc-inline-code doc-inline-code--cyan">/users</code></td>
+            <td>Crear nuevo usuario</td>
+            <td>201</td>
+          </tr>
+          <tr>
+            <td><span class="doc-method">PATCH</span></td>
+            <td><code class="doc-inline-code doc-inline-code--cyan">/users/{'{id}'}</code></td>
+            <td>Actualización parcial</td>
+            <td>200 / 404</td>
+          </tr>
+          <tr>
+            <td><span class="doc-method">DELETE</span></td>
+            <td><code class="doc-inline-code doc-inline-code--cyan">/users/{'{id}'}</code></td>
+            <td>Eliminar usuario</td>
+            <td>204 / 404</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Pydantic Schemas -->
+  <section id="pydantic-schemas">
+    <h2 class="doc-article__h2">Pydantic Schemas</h2>
+    <p>
+      Los schemas definen la forma de los datos de entrada y salida. Pydantic v2 usa
+      <code class="doc-inline-code">model_validator</code> y <code class="doc-inline-code">field_validator</code>
+      para validaciones complejas. Separamos en <strong>Create</strong>, <strong>Read</strong> y
+      <strong>Update</strong> para controlar qué campos se exponen en cada operación.
+    </p>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-keyword">from</span> pydantic <span class="token-keyword">import</span> BaseModel, EmailStr, field_validator, ConfigDict
+<span class="token-keyword">from</span> datetime <span class="token-keyword">import</span> datetime
+<span class="token-keyword">from</span> typing <span class="token-keyword">import</span> Optional
+
+<span class="token-keyword">class</span> <span class="token-func">UserBase</span>(BaseModel):
+    <span class="token-string">"""Campos compartidos entre Create y Read."""</span>
+    email: EmailStr
+    full_name: <span class="token-keyword">str</span>
+    role: <span class="token-keyword">str</span> = <span class="token-string">"viewer"</span>
+
+    @<span class="token-func">field_validator</span>(<span class="token-string">"role"</span>)
+    @<span class="token-keyword">classmethod</span>
+    <span class="token-keyword">def</span> <span class="token-func">validate_role</span>(cls, v: <span class="token-keyword">str</span>) -> <span class="token-keyword">str</span>:
+        allowed = {<span class="token-string">"admin"</span>, <span class="token-string">"editor"</span>, <span class="token-string">"viewer"</span>}
+        <span class="token-keyword">if</span> v <span class="token-keyword">not in</span> allowed:
+            <span class="token-keyword">raise</span> <span class="token-func">ValueError</span>(f<span class="token-string">"Role must be one of {allowed}"</span>)
+        <span class="token-keyword">return</span> v
+
+<span class="token-keyword">class</span> <span class="token-func">UserCreate</span>(UserBase):
+    <span class="token-string">"""Schema para POST /users — incluye password."""</span>
+    password: <span class="token-keyword">str</span>
+
+    @<span class="token-func">field_validator</span>(<span class="token-string">"password"</span>)
+    @<span class="token-keyword">classmethod</span>
+    <span class="token-keyword">def</span> <span class="token-func">validate_password</span>(cls, v: <span class="token-keyword">str</span>) -> <span class="token-keyword">str</span>:
+        <span class="token-keyword">if</span> <span class="token-func">len</span>(v) < <span class="token-string">8</span>:
+            <span class="token-keyword">raise</span> <span class="token-func">ValueError</span>(<span class="token-string">"Password must be ≥ 8 characters"</span>)
+        <span class="token-keyword">return</span> v
+
+<span class="token-keyword">class</span> <span class="token-func">UserRead</span>(UserBase):
+    <span class="token-string">"""Schema para respuestas — nunca expone password."""</span>
+    id: <span class="token-keyword">int</span>
+    created_at: datetime
+    model_config = <span class="token-func">ConfigDict</span>(from_attributes=<span class="token-string">True</span>)
+
+<span class="token-keyword">class</span> <span class="token-func">UserUpdate</span>(BaseModel):
+    <span class="token-string">"""Schema para PATCH — todos opcionales."""</span>
+    email: Optional[EmailStr] = <span class="token-string">None</span>
+    full_name: Optional[<span class="token-keyword">str</span>] = <span class="token-string">None</span>
+    role: Optional[<span class="token-keyword">str</span>] = <span class="token-string">None</span>`} />
+    </CodeBlock>
+
+    <Callout type="tip" title="from_attributes=True">
+      Con <code>from_attributes=True</code> (antes <code>orm_mode</code>), Pydantic puede
+      leer directamente desde objetos SQLAlchemy sin necesidad de convertir a dict.
+    </Callout>
+  </section>
+
+  <!-- CRUD Operations -->
+  <section id="crud-operations">
+    <h2 class="doc-article__h2">CRUD Operations</h2>
+    <p>
+      La capa de servicios encapsula la lógica de negocio y las operaciones de base de datos.
+      Los routers solo se encargan de HTTP; la lógica real vive en <code class="doc-inline-code">services/</code>.
+    </p>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-comment"># app/services/user_service.py</span>
+<span class="token-keyword">from</span> sqlalchemy.orm <span class="token-keyword">import</span> Session
+<span class="token-keyword">from</span> fastapi <span class="token-keyword">import</span> HTTPException
+<span class="token-keyword">from</span> passlib.context <span class="token-keyword">import</span> CryptContext
+
+<span class="token-keyword">from</span> app.models.user <span class="token-keyword">import</span> User
+<span class="token-keyword">from</span> app.schemas.user <span class="token-keyword">import</span> UserCreate, UserUpdate
+
+pwd_context = <span class="token-func">CryptContext</span>(schemes=[<span class="token-string">"bcrypt"</span>])
+
+<span class="token-keyword">def</span> <span class="token-func">get_users</span>(db: Session, skip: <span class="token-keyword">int</span> = <span class="token-string">0</span>, limit: <span class="token-keyword">int</span> = <span class="token-string">25</span>):
+    <span class="token-keyword">return</span> db.query(User).offset(skip).limit(limit).all()
+
+<span class="token-keyword">def</span> <span class="token-func">get_user</span>(db: Session, user_id: <span class="token-keyword">int</span>):
+    <span class="token-keyword">return</span> db.query(User).filter(User.id == user_id).first()
+
+<span class="token-keyword">def</span> <span class="token-func">create_user</span>(db: Session, user_in: UserCreate):
+    <span class="token-comment"># Verificar email único</span>
+    existing = db.query(User).filter(User.email == user_in.email).first()
+    <span class="token-keyword">if</span> existing:
+        <span class="token-keyword">raise</span> <span class="token-func">HTTPException</span>(status_code=<span class="token-string">409</span>, detail=<span class="token-string">"Email already registered"</span>)
+
+    hashed = pwd_context.<span class="token-func">hash</span>(user_in.password)
+    user = <span class="token-func">User</span>(
+        email=user_in.email,
+        full_name=user_in.full_name,
+        role=user_in.role,
+        hashed_password=hashed,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    <span class="token-keyword">return</span> user
+
+<span class="token-keyword">def</span> <span class="token-func">update_user</span>(db: Session, user_id: <span class="token-keyword">int</span>, user_in: UserUpdate):
+    user = <span class="token-func">get_user</span>(db, user_id)
+    <span class="token-keyword">if not</span> user:
+        <span class="token-keyword">raise</span> <span class="token-func">HTTPException</span>(status_code=<span class="token-string">404</span>, detail=<span class="token-string">"User not found"</span>)
+
+    update_data = user_in.model_dump(exclude_unset=<span class="token-string">True</span>)
+    <span class="token-keyword">for</span> field, value <span class="token-keyword">in</span> update_data.items():
+        <span class="token-func">setattr</span>(user, field, value)
+
+    db.commit()
+    db.refresh(user)
+    <span class="token-keyword">return</span> user
+
+<span class="token-keyword">def</span> <span class="token-func">delete_user</span>(db: Session, user_id: <span class="token-keyword">int</span>):
+    user = <span class="token-func">get_user</span>(db, user_id)
+    <span class="token-keyword">if not</span> user:
+        <span class="token-keyword">raise</span> <span class="token-func">HTTPException</span>(status_code=<span class="token-string">404</span>, detail=<span class="token-string">"User not found"</span>)
+    db.delete(user)
+    db.commit()`} />
+    </CodeBlock>
+
+    <Callout type="warning" title="exclude_unset vs exclude_none">
+      Usa <code>exclude_unset=True</code> en PATCH, no <code>exclude_none</code>.
+      Así distingues entre "el campo no fue enviado" y "el campo fue enviado como null".
+    </Callout>
+  </section>
+
+  <!-- Auth & Middleware -->
+  <section id="auth-middleware">
+    <h2 class="doc-article__h2">Auth & Middleware</h2>
+    <p>
+      La autenticación usa <strong>JWT (JSON Web Tokens)</strong> con la librería
+      <code class="doc-inline-code">python-jose</code>. El token se envía en el header
+      <code class="doc-inline-code">Authorization: Bearer &lt;token&gt;</code>.
+    </p>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-comment"># app/middleware/auth.py</span>
+<span class="token-keyword">from</span> datetime <span class="token-keyword">import</span> datetime, timedelta
+<span class="token-keyword">from</span> jose <span class="token-keyword">import</span> JWTError, jwt
+<span class="token-keyword">from</span> fastapi <span class="token-keyword">import</span> Depends, HTTPException, status
+<span class="token-keyword">from</span> fastapi.security <span class="token-keyword">import</span> OAuth2PasswordBearer
+
+<span class="token-keyword">from</span> app.config <span class="token-keyword">import</span> settings
+
+oauth2_scheme = <span class="token-func">OAuth2PasswordBearer</span>(tokenUrl=<span class="token-string">"auth/login"</span>)
+
+<span class="token-keyword">def</span> <span class="token-func">create_access_token</span>(data: <span class="token-keyword">dict</span>, expires_delta: timedelta = <span class="token-string">None</span>):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta <span class="token-keyword">or</span> <span class="token-func">timedelta</span>(minutes=<span class="token-string">30</span>))
+    to_encode.update({<span class="token-string">"exp"</span>: expire})
+    <span class="token-keyword">return</span> jwt.<span class="token-func">encode</span>(to_encode, settings.SECRET_KEY, algorithm=<span class="token-string">"HS256"</span>)
+
+<span class="token-keyword">async def</span> <span class="token-func">get_current_user</span>(token: <span class="token-keyword">str</span> = <span class="token-func">Depends</span>(oauth2_scheme)):
+    credentials_exception = <span class="token-func">HTTPException</span>(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=<span class="token-string">"Could not validate credentials"</span>,
+        headers={<span class="token-string">"WWW-Authenticate"</span>: <span class="token-string">"Bearer"</span>},
+    )
+    <span class="token-keyword">try</span>:
+        payload = jwt.<span class="token-func">decode</span>(token, settings.SECRET_KEY, algorithms=[<span class="token-string">"HS256"</span>])
+        user_id: <span class="token-keyword">str</span> = payload.<span class="token-func">get</span>(<span class="token-string">"sub"</span>)
+        <span class="token-keyword">if</span> user_id <span class="token-keyword">is None</span>:
+            <span class="token-keyword">raise</span> credentials_exception
+    <span class="token-keyword">except</span> JWTError:
+        <span class="token-keyword">raise</span> credentials_exception
+    <span class="token-keyword">return</span> user_id
+
+<span class="token-comment"># Usar en endpoints protegidos:</span>
+@router.<span class="token-func">get</span>(<span class="token-string">"/me"</span>)
+<span class="token-keyword">async def</span> <span class="token-func">read_profile</span>(user_id: <span class="token-keyword">str</span> = <span class="token-func">Depends</span>(get_current_user)):
+    <span class="token-keyword">return</span> {<span class="token-string">"user_id"</span>: user_id}`} />
+    </CodeBlock>
+
+    <Callout type="info" title="Flujo de autenticación">
+      1. El cliente envía credenciales a <code>POST /auth/login</code><br/>
+      2. El servidor valida y retorna un JWT<br/>
+      3. El cliente incluye el JWT en cada petición subsecuente<br/>
+      4. <code>get_current_user</code> valida el token automáticamente vía <code>Depends</code>
+    </Callout>
+  </section>
+
+  <!-- Error Handling -->
+  <section id="error-handling">
+    <h2 class="doc-article__h2">Error Handling</h2>
+    <p>
+      FastAPI permite registrar exception handlers globales que capturan errores
+      y los transforman en respuestas JSON consistentes. Esto asegura que el
+      cliente siempre reciba un formato predecible.
+    </p>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-comment"># app/main.py — Exception handlers</span>
+<span class="token-keyword">from</span> fastapi <span class="token-keyword">import</span> Request
+<span class="token-keyword">from</span> fastapi.responses <span class="token-keyword">import</span> JSONResponse
+<span class="token-keyword">from</span> pydantic <span class="token-keyword">import</span> ValidationError
+
+<span class="token-comment"># Error de validación personalizado</span>
+@app.<span class="token-func">exception_handler</span>(ValidationError)
+<span class="token-keyword">async def</span> <span class="token-func">validation_handler</span>(request: Request, exc: ValidationError):
+    <span class="token-keyword">return</span> <span class="token-func">JSONResponse</span>(
+        status_code=<span class="token-string">422</span>,
+        content={
+            <span class="token-string">"error"</span>: <span class="token-string">"validation_error"</span>,
+            <span class="token-string">"detail"</span>: exc.errors(),
+            <span class="token-string">"body"</span>: exc.body <span class="token-keyword">if</span> <span class="token-func">hasattr</span>(exc, <span class="token-string">"body"</span>) <span class="token-keyword">else</span> <span class="token-string">None</span>,
+        },
+    )
+
+<span class="token-comment"># Error genérico (500)</span>
+@app.<span class="token-func">exception_handler</span>(Exception)
+<span class="token-keyword">async def</span> <span class="token-func">generic_handler</span>(request: Request, exc: Exception):
+    <span class="token-keyword">return</span> <span class="token-func">JSONResponse</span>(
+        status_code=<span class="token-string">500</span>,
+        content={
+            <span class="token-string">"error"</span>: <span class="token-string">"internal_server_error"</span>,
+            <span class="token-string">"detail"</span>: <span class="token-string">"An unexpected error occurred"</span>,
+        },
+    )`} />
+    </CodeBlock>
+
+    <h3 class="doc-article__h3">Formato estándar de error</h3>
+    <CodeBlock lang="json">
+      <Fragment set:html={`{
+  <span class="token-string">"error"</span>: <span class="token-string">"not_found"</span>,
+  <span class="token-string">"detail"</span>: <span class="token-string">"User with id 42 not found"</span>,
+  <span class="token-string">"status_code"</span>: <span class="token-string">404</span>,
+  <span class="token-string">"timestamp"</span>: <span class="token-string">"2025-01-15T10:30:00Z"</span>
+}`} />
+    </CodeBlock>
+
+    <Callout type="tip" title="OpenAPI automático">
+      FastAPI genera documentación Swagger/OpenAPI en <code>/docs</code> automáticamente.
+      Cada endpoint, schema y error handler se refleja sin configuración adicional.
+    </Callout>
+  </section>
+
+  <!-- PLACEHOLDER -->
+</article>

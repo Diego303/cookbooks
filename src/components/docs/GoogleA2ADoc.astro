@@ -1,0 +1,269 @@
+---
+import CodeBlock from '../CodeBlock.astro';
+import Callout from '../Callout.astro';
+import DocSection from '../DocSection.astro';
+import DocImage from '../DocImage.astro';
+import DocList from '../DocList.astro';
+---
+
+<article class="doc-article">
+  <h1 class="doc-article__title">Google A2A Protocol</h1>
+
+  <p class="doc-article__intro">
+    Guía del protocolo Agent-to-Agent (A2A) de Google para comunicación
+    estandarizada entre agentes de IA. Cubre la especificación del protocolo,
+    Agent Cards, gestión de tareas, streaming y autenticación.
+  </p>
+
+  <!-- Protocol Overview -->
+  <section id="protocol-overview">
+    <h2 class="doc-article__h2">Protocol Overview</h2>
+    <p>
+      A2A define un estándar abierto para que agentes de IA se <strong>descubran</strong>,
+      <strong>comuniquen</strong> y <strong>colaboren</strong> independientemente de su
+      framework o proveedor. Se basa en HTTP/JSON-RPC.
+    </p>
+
+    <CodeBlock lang="text">
+      <Fragment set:html={`<span class="token-comment">Flujo de comunicación A2A</span>
+
+┌──────────────┐                              ┌──────────────┐
+│  <span class="token-func">Agent A</span>     │                              │  <span class="token-func">Agent B</span>     │
+│  (client)    │                              │  (server)    │
+│              │                              │              │
+│  1. Discover │   GET /.well-known/agent.json│              │
+│  ────────────┼─────────────────────────────▶│              │
+│              │◀─────────────────────────────┤  Agent Card  │
+│              │            200 OK            │              │
+│              │                              │              │
+│  2. Send Task│   POST / (JSON-RPC)          │              │
+│  ────────────┼─────────────────────────────▶│              │
+│              │   method: "tasks/send"       │  3. Process  │
+│              │                              │  ────────────│
+│              │                              │  Execute task│
+│              │◀─────────────────────────────┤              │
+│  4. Result   │   JSON-RPC Response          │              │
+│              │   (Task with artifacts)      │              │
+└──────────────┘                              └──────────────┘`} />
+    </CodeBlock>
+
+    <div class="doc-table-wrapper custom-scroll">
+      <table class="doc-table">
+        <thead>
+          <tr><th>Concepto</th><th>Descripción</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Agent Card</strong></td><td>Documento JSON que describe las capacidades del agente, sus skills y cómo autenticarse</td></tr>
+          <tr><td><strong>Task</strong></td><td>Unidad de trabajo enviada entre agentes con un ciclo de vida definido</td></tr>
+          <tr><td><strong>Message</strong></td><td>Comunicación dentro de una task con uno o más Parts</td></tr>
+          <tr><td><strong>Part</strong></td><td>Contenido atómico: TextPart, FilePart o DataPart</td></tr>
+          <tr><td><strong>Artifact</strong></td><td>Resultado producido por el agente al completar una task</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Agent Card -->
+  <section id="agent-card">
+    <h2 class="doc-article__h2">Agent Card</h2>
+    <p>
+      La <strong>Agent Card</strong> es un documento JSON servido en
+      <code class="doc-inline-code">/.well-known/agent.json</code> que describe las capacidades
+      del agente. Es el mecanismo de descubrimiento del protocolo.
+    </p>
+
+    <CodeBlock lang="json">
+      <Fragment set:html={`{
+  <span class="token-keyword">"name"</span>: <span class="token-string">"CodeReview Agent"</span>,
+  <span class="token-keyword">"description"</span>: <span class="token-string">"Agente que revisa código, sugiere mejoras y detecta bugs"</span>,
+  <span class="token-keyword">"url"</span>: <span class="token-string">"https://agent.example.com/"</span>,
+  <span class="token-keyword">"version"</span>: <span class="token-string">"1.0.0"</span>,
+  <span class="token-keyword">"capabilities"</span>: {
+    <span class="token-keyword">"streaming"</span>: <span class="token-string">true</span>,
+    <span class="token-keyword">"pushNotifications"</span>: <span class="token-string">false</span>
+  },
+  <span class="token-keyword">"skills"</span>: [
+    {
+      <span class="token-keyword">"id"</span>: <span class="token-string">"code-review"</span>,
+      <span class="token-keyword">"name"</span>: <span class="token-string">"Code Review"</span>,
+      <span class="token-keyword">"description"</span>: <span class="token-string">"Analiza código fuente y genera sugerencias"</span>,
+      <span class="token-keyword">"tags"</span>: [<span class="token-string">"python"</span>, <span class="token-string">"javascript"</span>, <span class="token-string">"review"</span>],
+      <span class="token-keyword">"examples"</span>: [
+        <span class="token-string">"Revisa este pull request para bugs de seguridad"</span>,
+        <span class="token-string">"Sugiere mejoras de rendimiento en este código"</span>
+      ]
+    },
+    {
+      <span class="token-keyword">"id"</span>: <span class="token-string">"bug-detection"</span>,
+      <span class="token-keyword">"name"</span>: <span class="token-string">"Bug Detection"</span>,
+      <span class="token-keyword">"description"</span>: <span class="token-string">"Detecta bugs potenciales en el código"</span>,
+      <span class="token-keyword">"tags"</span>: [<span class="token-string">"bugs"</span>, <span class="token-string">"testing"</span>]
+    }
+  ],
+  <span class="token-keyword">"authentication"</span>: {
+    <span class="token-keyword">"schemes"</span>: [<span class="token-string">"Bearer"</span>],
+    <span class="token-keyword">"credentials"</span>: <span class="token-string">"OAuth2 token required"</span>
+  }
+}`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Task Management -->
+  <section id="task-management">
+    <h2 class="doc-article__h2">Task Management</h2>
+    <p>
+      Las tareas tienen un ciclo de vida definido con estados claros.
+      Se envían via JSON-RPC y pueden ser síncronas o asíncronas.
+    </p>
+
+    <CodeBlock lang="text">
+      <Fragment set:html={`<span class="token-comment">Ciclo de vida de una Task</span>
+
+ ┌───────────┐     ┌──────────┐     ┌───────────┐
+ │ <span class="token-string">submitted</span> │────▶│ <span class="token-string">working</span>  │────▶│ <span class="token-string">completed</span> │
+ └───────────┘     └────┬─────┘     └───────────┘
+                        │
+                   ┌────▼──────┐
+                   │  <span class="token-string">failed</span>   │
+                   └───────────┘
+                        │
+                   ┌────▼────────────┐
+                   │ <span class="token-string">input-required</span>  │  <span class="token-comment">(necesita más info del client)</span>
+                   └─────────────────┘`} />
+    </CodeBlock>
+
+    <h3 class="doc-article__h3">Enviar una task (client)</h3>
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-keyword">import</span> httpx
+
+<span class="token-comment"># ── Enviar task al agente A2A ──</span>
+request = {
+    <span class="token-string">"jsonrpc"</span>: <span class="token-string">"2.0"</span>,
+    <span class="token-string">"id"</span>: <span class="token-string">"req-001"</span>,
+    <span class="token-string">"method"</span>: <span class="token-string">"tasks/send"</span>,
+    <span class="token-string">"params"</span>: {
+        <span class="token-string">"id"</span>: <span class="token-string">"task-123"</span>,
+        <span class="token-string">"message"</span>: {
+            <span class="token-string">"role"</span>: <span class="token-string">"user"</span>,
+            <span class="token-string">"parts"</span>: [
+                {
+                    <span class="token-string">"type"</span>: <span class="token-string">"text"</span>,
+                    <span class="token-string">"text"</span>: <span class="token-string">"Revisa este código Python para bugs de seguridad"</span>
+                },
+                {
+                    <span class="token-string">"type"</span>: <span class="token-string">"file"</span>,
+                    <span class="token-string">"file"</span>: {
+                        <span class="token-string">"name"</span>: <span class="token-string">"auth.py"</span>,
+                        <span class="token-string">"mimeType"</span>: <span class="token-string">"text/x-python"</span>,
+                        <span class="token-string">"bytes"</span>: <span class="token-string">"base64-encoded-content..."</span>
+                    }
+                }
+            ]
+        }
+    }
+}
+
+response = httpx.<span class="token-func">post</span>(<span class="token-string">"https://agent.example.com/"</span>, json=request)
+result = response.<span class="token-func">json</span>()`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Server Implementation -->
+  <section id="server-implementation">
+    <h2 class="doc-article__h2">Server Implementation</h2>
+    <p>
+      Implementar un servidor A2A con el SDK oficial de Google. El servidor
+      registra handlers para cada método del protocolo.
+    </p>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-keyword">from</span> a2a.server <span class="token-keyword">import</span> A2AServer, TaskHandler
+<span class="token-keyword">from</span> a2a.types <span class="token-keyword">import</span> (
+    AgentCard, Skill, Task, TaskState,
+    Message, TextPart, Artifact,
+)
+
+<span class="token-comment"># ── Agent Card ──</span>
+card = <span class="token-func">AgentCard</span>(
+    name=<span class="token-string">"CodeReview Agent"</span>,
+    description=<span class="token-string">"Revisa código y detecta bugs"</span>,
+    url=<span class="token-string">"https://agent.example.com/"</span>,
+    version=<span class="token-string">"1.0.0"</span>,
+    skills=[
+        <span class="token-func">Skill</span>(
+            id=<span class="token-string">"code-review"</span>,
+            name=<span class="token-string">"Code Review"</span>,
+            description=<span class="token-string">"Analiza código fuente"</span>,
+        )
+    ],
+)
+
+<span class="token-comment"># ── Task Handler ──</span>
+<span class="token-keyword">class</span> <span class="token-func">ReviewHandler</span>(TaskHandler):
+    <span class="token-keyword">async def</span> <span class="token-func">on_task_send</span>(<span class="token-keyword">self</span>, task: Task) -> Task:
+        <span class="token-comment"># Extraer código del mensaje</span>
+        user_message = task.messages[-<span class="token-string">1</span>]
+        code = <span class="token-keyword">self</span>.<span class="token-func">extract_code</span>(user_message)
+
+        <span class="token-comment"># Ejecutar review con LLM</span>
+        review = <span class="token-keyword">await self</span>.<span class="token-func">run_review</span>(code)
+
+        <span class="token-comment"># Devolver resultado como artifact</span>
+        task.status = TaskState.COMPLETED
+        task.artifacts = [
+            <span class="token-func">Artifact</span>(
+                name=<span class="token-string">"review-result"</span>,
+                parts=[<span class="token-func">TextPart</span>(text=review)],
+            )
+        ]
+        <span class="token-keyword">return</span> task
+
+<span class="token-comment"># ── Iniciar servidor ──</span>
+server = <span class="token-func">A2AServer</span>(agent_card=card, handler=<span class="token-func">ReviewHandler</span>())
+server.<span class="token-func">run</span>(host=<span class="token-string">"0.0.0.0"</span>, port=<span class="token-string">8080</span>)`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Streaming -->
+  <section id="streaming">
+    <h2 class="doc-article__h2">Streaming</h2>
+    <p>
+      Para tareas de larga duración, A2A soporta <strong>Server-Sent Events (SSE)</strong>
+      que permiten al client recibir actualizaciones en tiempo real.
+    </p>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-comment"># Client: Recibir streaming via SSE</span>
+<span class="token-keyword">import</span> httpx
+
+request = {
+    <span class="token-string">"jsonrpc"</span>: <span class="token-string">"2.0"</span>,
+    <span class="token-string">"id"</span>: <span class="token-string">"req-002"</span>,
+    <span class="token-string">"method"</span>: <span class="token-string">"tasks/sendSubscribe"</span>,  <span class="token-comment"># SSE endpoint</span>
+    <span class="token-string">"params"</span>: {
+        <span class="token-string">"id"</span>: <span class="token-string">"task-456"</span>,
+        <span class="token-string">"message"</span>: {
+            <span class="token-string">"role"</span>: <span class="token-string">"user"</span>,
+            <span class="token-string">"parts"</span>: [{<span class="token-string">"type"</span>: <span class="token-string">"text"</span>, <span class="token-string">"text"</span>: <span class="token-string">"Analiza este repo completo"</span>}]
+        }
+    }
+}
+
+<span class="token-comment"># Stream de eventos</span>
+<span class="token-keyword">with</span> httpx.<span class="token-func">stream</span>(<span class="token-string">"POST"</span>, <span class="token-string">"https://agent.example.com/"</span>, json=request) <span class="token-keyword">as</span> r:
+    <span class="token-keyword">for</span> line <span class="token-keyword">in</span> r.<span class="token-func">iter_lines</span>():
+        <span class="token-keyword">if</span> line.startswith(<span class="token-string">"data:"</span>):
+            event = json.<span class="token-func">loads</span>(line[<span class="token-string">5:</span>])
+            <span class="token-func">print</span>(f<span class="token-string">"Status: {event['result']['status']}"</span>)
+            <span class="token-comment"># submitted → working → completed</span>`} />
+    </CodeBlock>
+
+    <Callout type="info" title="Multi-agent orchestration">
+      Un agente <strong>orquestador</strong> puede descubrir otros agentes vía Agent Cards,
+      enviar sub-tareas a agentes especializados (code review, testing, deployment),
+      y combinar los resultados. A2A estandariza esta comunicación.
+    </Callout>
+  </section>
+
+  <!-- PLACEHOLDER -->
+</article>

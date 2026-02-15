@@ -1,0 +1,93 @@
+---
+/**
+ * Callout — Admonition/note component with "tape" effect.
+ * Types: info (cyan), warning (yellow), tip (green), danger (red/pink).
+ */
+interface Props {
+  type?: 'info' | 'warning' | 'tip' | 'danger';
+  title?: string;
+}
+
+const { type = 'info', title } = Astro.props;
+
+const config = {
+  info:    { icon: 'info',            color: 'var(--accent-cyan)',   bg: 'rgba(34, 211, 238, 0.06)',  label: 'Info' },
+  warning: { icon: 'alert-triangle',  color: 'var(--accent-yellow)', bg: 'rgba(253, 224, 71, 0.06)',  label: 'Advertencia' },
+  tip:     { icon: 'lightbulb',       color: 'var(--accent-green)',  bg: 'rgba(134, 239, 172, 0.06)', label: 'Tip' },
+  danger:  { icon: 'shield-alert',    color: 'var(--accent-red)',    bg: 'rgba(251, 113, 133, 0.06)', label: 'Peligro' },
+};
+
+const c = config[type];
+const displayTitle = title || c.label;
+---
+
+<div
+  class="callout"
+  style={`--callout-color: ${c.color}; --callout-bg: ${c.bg};`}
+  role="note"
+>
+  <div class="callout__tape" aria-hidden="true"></div>
+  <div class="callout__body">
+    <i data-lucide={c.icon} class="callout__icon"></i>
+    <div class="callout__content">
+      <p class="callout__title">{displayTitle}</p>
+      <div class="callout__text">
+        <slot />
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .callout {
+    position: relative;
+    background: var(--callout-bg);
+    border-left: 4px solid var(--callout-color);
+    padding: 1rem 1.25rem;
+    margin-block: 1.25rem;
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  }
+
+  .callout__tape {
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    width: 5rem;
+    height: 1.25rem;
+    background: color-mix(in srgb, var(--callout-color) 15%, transparent);
+    transform: translateX(-50%) rotate(1deg) skewX(12deg);
+    border-radius: 1px;
+  }
+
+  .callout__body {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+  }
+
+  .callout__icon {
+    width: 20px;
+    height: 20px;
+    color: var(--callout-color);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .callout__content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .callout__title {
+    font-weight: 700;
+    font-size: 0.875rem;
+    color: var(--callout-color);
+    margin-bottom: 0.25rem;
+  }
+
+  .callout__text {
+    font-size: 0.875rem;
+    color: color-mix(in srgb, var(--callout-color) 70%, var(--text-primary));
+    line-height: 1.6;
+  }
+</style>

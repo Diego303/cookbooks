@@ -1,0 +1,143 @@
+---
+/**
+ * DocImage — Image/diagram component for documentation pages.
+ *
+ * Features:
+ *   - Optional caption displayed below the image
+ *   - Optional border for diagrams that blend with the dark background
+ *   - Click-to-expand lightbox (pure CSS, no JS)
+ *   - Responsive: scales down on mobile, full-width on desktop
+ *
+ * @example
+ * <DocImage
+ *   src="/images/architecture-diagram.png"
+ *   alt="System architecture overview"
+ *   caption="Fig. 1 — High-level architecture"
+ *   border
+ * />
+ */
+interface Props {
+  src: string;
+  alt: string;
+  caption?: string;
+  border?: boolean;
+}
+
+const { src, alt, caption, border = false } = Astro.props;
+---
+
+<figure class={`doc-image ${border ? 'doc-image--bordered' : ''}`}>
+  <input type="checkbox" id={`lightbox-${src.replace(/\W/g, '-')}`} class="doc-image__toggle" />
+  <label for={`lightbox-${src.replace(/\W/g, '-')}`} class="doc-image__wrapper">
+    <img src={src} alt={alt} class="doc-image__img" loading="lazy" />
+    <span class="doc-image__zoom-hint">
+      <i data-lucide="maximize-2" class="doc-image__zoom-icon"></i>
+    </span>
+  </label>
+
+  <!-- Lightbox overlay (pure CSS) -->
+  <label for={`lightbox-${src.replace(/\W/g, '-')}`} class="doc-image__lightbox">
+    <img src={src} alt={alt} class="doc-image__lightbox-img" loading="lazy" />
+  </label>
+
+  {caption && (
+    <figcaption class="doc-image__caption">{caption}</figcaption>
+  )}
+</figure>
+
+<style>
+  .doc-image {
+    margin-block: 1.5rem;
+    position: relative;
+  }
+
+  .doc-image__toggle {
+    display: none;
+  }
+
+  .doc-image__wrapper {
+    display: block;
+    position: relative;
+    cursor: zoom-in;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    transition: transform 0.2s;
+  }
+
+  .doc-image__wrapper:hover {
+    transform: scale(1.005);
+  }
+
+  .doc-image__wrapper:hover .doc-image__zoom-hint {
+    opacity: 1;
+  }
+
+  .doc-image__img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: var(--radius-md);
+  }
+
+  .doc-image--bordered .doc-image__img {
+    border: 1px solid var(--border-default);
+  }
+
+  .doc-image__zoom-hint {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    padding: 0.375rem;
+    opacity: 0;
+    transition: opacity 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .doc-image__zoom-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--text-secondary);
+  }
+
+  /* Lightbox overlay */
+  .doc-image__lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: rgba(0, 0, 0, 0.9);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    cursor: zoom-out;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+  }
+
+  .doc-image__toggle:checked ~ .doc-image__lightbox {
+    display: flex;
+  }
+
+  .doc-image__lightbox-img {
+    max-width: 90vw;
+    max-height: 90vh;
+    object-fit: contain;
+    border-radius: var(--radius-md);
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Caption */
+  .doc-image__caption {
+    text-align: center;
+    font-family: var(--font-hand);
+    font-size: 0.9375rem;
+    color: var(--text-muted);
+    margin-top: 0.75rem;
+    font-style: normal;
+  }
+</style>

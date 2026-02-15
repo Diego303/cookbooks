@@ -1,0 +1,144 @@
+---
+/**
+ * LibraryCard — "Sticky-note" style card for a documentation topic.
+ * Accepts topic metadata and renders with the appropriate accent color.
+ */
+interface Props {
+  id: string;
+  title: string;
+  category: string;
+  categoryColor: 'cyan' | 'pink' | 'yellow' | 'green' | 'purple' | 'orange' | 'red';
+  icon: string;
+  description: string;
+  tags: string[];
+}
+
+const { id, title, category, categoryColor, icon, description, tags } = Astro.props;
+
+const colorMap = {
+  cyan:   { css: 'var(--accent-cyan)',   cls: 'card--cyan'   },
+  pink:   { css: 'var(--accent-pink)',   cls: 'card--pink'   },
+  yellow: { css: 'var(--accent-yellow)', cls: 'card--yellow' },
+  green:  { css: 'var(--accent-green)',  cls: 'card--green'  },
+  purple: { css: 'var(--accent-purple)', cls: 'card--purple' },
+  orange: { css: 'var(--accent-orange)', cls: 'card--orange' },
+  red:    { css: 'var(--accent-red)',    cls: 'card--red'    },
+};
+
+const color = colorMap[categoryColor];
+---
+
+<article
+  class={`card sticky-note ${color.cls}`}
+  data-topic-id={id}
+  data-category={category}
+  data-searchable={`${title} ${description} ${tags.join(' ')}`.toLowerCase()}
+  tabindex="0"
+  role="button"
+  aria-label={`Abrir documentación: ${title}`}
+>
+  <div class="card__header">
+    <span class="card__category">{category}</span>
+    <i data-lucide={icon} class="card__icon"></i>
+  </div>
+
+  <h3 class="card__title">{title}</h3>
+  <p class="card__desc">{description}</p>
+
+  <div class="card__footer">
+    {tags.map(tag => (
+      <span class="card__tag">{tag}</span>
+    ))}
+  </div>
+</article>
+
+<style>
+  .card {
+    padding: 1.5rem;
+    position: relative;
+    cursor: pointer;
+    border-top: 4px solid var(--border-default);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .card:hover,
+  .card:focus-visible {
+    transform: translateY(-8px) rotate(0deg) !important;
+  }
+
+  .card:focus-visible {
+    outline: 2px solid var(--accent-yellow);
+    outline-offset: 2px;
+  }
+
+  /* Color variants */
+  .card--cyan   { border-top-color: var(--accent-cyan); }
+  .card--pink   { border-top-color: var(--accent-pink); }
+  .card--yellow { border-top-color: var(--accent-yellow); }
+  .card--green  { border-top-color: var(--accent-green); }
+  .card--purple { border-top-color: var(--accent-purple); }
+  .card--orange { border-top-color: var(--accent-orange); }
+  .card--red    { border-top-color: var(--accent-red); }
+
+  .card--cyan  .card__category { color: var(--accent-cyan);  border-color: var(--accent-cyan); }
+  .card--pink  .card__category { color: var(--accent-pink);  border-color: var(--accent-pink); }
+  .card--yellow .card__category { color: var(--accent-yellow); border-color: var(--accent-yellow); }
+  .card--green .card__category { color: var(--accent-green); border-color: var(--accent-green); }
+  .card--purple .card__category { color: var(--accent-purple); border-color: var(--accent-purple); }
+  .card--orange .card__category { color: var(--accent-orange); border-color: var(--accent-orange); }
+  .card--red   .card__category { color: var(--accent-red);   border-color: var(--accent-red); }
+
+  .card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+  }
+
+  .card__category {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 0.125rem 0.5rem;
+    border: 1px solid;
+    border-radius: var(--radius-sm);
+  }
+
+  .card__icon {
+    width: 20px;
+    height: 20px;
+    color: var(--text-muted);
+  }
+
+  .card__title {
+    font-family: var(--font-mono);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: white;
+    margin-bottom: 0.5rem;
+  }
+
+  .card__desc {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 1rem;
+  }
+
+  .card__footer {
+    display: flex;
+    gap: 0.5rem;
+    border-top: 1px dashed var(--border-default);
+    padding-top: 0.75rem;
+  }
+
+  .card__tag {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+  }
+</style>

@@ -1,0 +1,139 @@
+---
+import CodeBlock from '../CodeBlock.astro';
+import Callout from '../Callout.astro';
+import DocSection from '../DocSection.astro';
+import DocImage from '../DocImage.astro';
+import DocList from '../DocList.astro';
+---
+
+<article class="doc-article">
+  <h1 class="doc-article__title">Backend Integration</h1>
+
+  <p class="doc-article__intro">
+    Esta guía describe cómo integrar tu servicio con nuestra API RESTful.
+    Diseñada para ser intuitiva y predecible, nuestra API utiliza características
+    estándar de HTTP como verbos, códigos de respuesta y autenticación basada en tokens.
+  </p>
+
+  <!-- Authentication -->
+  <section id="authentication">
+    <h2 class="doc-article__h2">
+      Authentication
+      <span class="doc-article__badge">Required</span>
+    </h2>
+    <p>
+      La autenticación se maneja a través del header
+      <code class="doc-inline-code">Authorization</code>.
+      Debes prefijar tu token de API con la palabra clave <code class="doc-inline-code">Bearer</code>.
+    </p>
+
+    <CodeBlock lang="bash">
+      <Fragment set:html={`curl https://api.cookbooks.dev/v1/projects \\
+  -H <span class="token-string">"Authorization: Bearer sk_test_51Mz..."</span> \\
+  -H <span class="token-string">"Content-Type: application/json"</span>`} />
+    </CodeBlock>
+
+    <Callout type="info" title="Rolling Keys">
+      Si sospechas que tu clave ha sido comprometida, puedes rotarla inmediatamente
+      desde el panel de control. Las claves antiguas expirarán tras 24 horas.
+    </Callout>
+  </section>
+
+  <!-- Rate Limiting -->
+  <section id="rate-limiting">
+    <h2 class="doc-article__h2">Rate Limiting</h2>
+    <p>
+      Limitamos las peticiones para asegurar la estabilidad del sistema. Los límites
+      actuales son de <strong>100 req/min</strong> para cuentas gratuitas y
+      <strong>1000 req/min</strong> para cuentas Pro.
+    </p>
+    <p>
+      Si excedes el límite, recibirás un código de estado
+      <code class="doc-inline-code doc-inline-code--pink">429 Too Many Requests</code>.
+    </p>
+
+    <CodeBlock lang="javascript">
+      <Fragment set:html={`<span class="token-keyword">const</span> <span class="token-func">handleRateLimit</span> = <span class="token-keyword">async</span> (response) => {
+  <span class="token-keyword">if</span> (response.status === <span class="token-string">429</span>) {
+    <span class="token-keyword">const</span> retryAfter = response.headers.get(<span class="token-string">'Retry-After'</span>);
+    <span class="token-keyword">await</span> <span class="token-func">sleep</span>(retryAfter * <span class="token-string">1000</span>);
+    <span class="token-keyword">return</span> <span class="token-func">retry</span>(response.url);
+  }
+};`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Core Resources -->
+  <section id="core-resources">
+    <h2 class="doc-article__h2">Core Resources</h2>
+    <div class="doc-table-wrapper custom-scroll">
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th>Resource</th>
+            <th>Description</th>
+            <th>Methods</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code class="doc-inline-code doc-inline-code--cyan">/projects</code></td>
+            <td>Gestión de tus espacios de documentación.</td>
+            <td><span class="doc-method">GET</span> <span class="doc-method">POST</span></td>
+          </tr>
+          <tr>
+            <td><code class="doc-inline-code doc-inline-code--cyan">/deployments</code></td>
+            <td>Historial de builds y estados.</td>
+            <td><span class="doc-method">GET</span></td>
+          </tr>
+          <tr>
+            <td><code class="doc-inline-code doc-inline-code--cyan">/teams</code></td>
+            <td>Miembros y permisos de acceso.</td>
+            <td><span class="doc-method">GET</span> <span class="doc-method">PUT</span> <span class="doc-method">DEL</span></td>
+          </tr>
+          <tr>
+            <td><code class="doc-inline-code doc-inline-code--cyan">/webhooks</code></td>
+            <td>Endpoints de notificación en tiempo real.</td>
+            <td><span class="doc-method">GET</span> <span class="doc-method">POST</span> <span class="doc-method">DEL</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <Callout type="tip" title="Paginación">
+      Todos los endpoints de listado soportan paginación con los parámetros
+      <code>?page=1&amp;per_page=25</code>. Revisa los headers
+      <code>X-Total-Count</code> y <code>Link</code> en la respuesta.
+    </Callout>
+  </section>
+
+  <!-- ============================================
+       PLACEHOLDER: Añade más secciones de documentación aquí.
+
+       Componentes disponibles:
+
+       <DocSection id="mi-seccion" title="Mi Sección" badge="Optional">
+         <p>Texto explicativo aquí...</p>
+
+         <DocImage
+           src="/images/mi-diagrama.png"
+           alt="Descripción del diagrama"
+           caption="Fig. 1 — Título del diagrama"
+           border
+         />
+
+         <CodeBlock lang="bash">
+           <Fragment set:html={`comando aquí`} />
+         </CodeBlock>
+
+         <DocList marker="check" items={[
+           'Primer punto importante',
+           'Segundo punto con <code class="doc-inline-code">código inline</code>',
+         ]} />
+
+         <Callout type="info" title="Nota">
+           Contenido de la nota aquí.
+         </Callout>
+       </DocSection>
+       ============================================ -->
+</article>

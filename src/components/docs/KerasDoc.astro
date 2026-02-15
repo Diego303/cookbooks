@@ -1,0 +1,315 @@
+---
+import CodeBlock from '../CodeBlock.astro';
+import Callout from '../Callout.astro';
+import DocSection from '../DocSection.astro';
+import DocImage from '../DocImage.astro';
+import DocList from '../DocList.astro';
+---
+
+<article class="doc-article">
+  <h1 class="doc-article__title">Deep Learning Keras</h1>
+
+  <p class="doc-article__intro">
+    Guía completa de desarrollo de modelos de deep learning con Keras y TensorFlow.
+    Desde la configuración del entorno con GPU hasta el entrenamiento, evaluación,
+    exportación y serving de modelos en producción.
+  </p>
+
+  <!-- Setup & Environment -->
+  <section id="keras-setup">
+    <h2 class="doc-article__h2">Setup & Environment</h2>
+    <p>
+      Keras 3 es multi-backend: funciona con TensorFlow, PyTorch y JAX.
+      La instalación estándar usa TensorFlow como backend por defecto.
+    </p>
+
+    <CodeBlock lang="bash">
+      <Fragment set:html={`<span class="token-comment"># Crear entorno con conda (recomendado para GPU)</span>
+conda create -n ml python=<span class="token-string">3.11</span> -y
+conda activate ml
+
+<span class="token-comment"># Instalar TensorFlow con soporte GPU</span>
+pip install <span class="token-string">tensorflow[and-cuda]</span>
+
+<span class="token-comment"># O instalar Keras 3 standalone</span>
+pip install <span class="token-string">keras</span>
+
+<span class="token-comment"># Dependencias de datos y visualización</span>
+pip install <span class="token-string">numpy pandas matplotlib scikit-learn</span>
+
+<span class="token-comment"># Verificar GPU disponible</span>
+python -c <span class="token-string">"import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"</span>`} />
+    </CodeBlock>
+
+    <CodeBlock lang="text">
+      <Fragment set:html={`<span class="token-comment">Estructura de un proyecto de ML</span>
+
+<span class="token-func">ml-project/</span>
+├── <span class="token-func">data/</span>
+│   ├── <span class="token-func">raw/</span>              <span class="token-comment"># Datos originales (nunca modificar)</span>
+│   ├── <span class="token-func">processed/</span>        <span class="token-comment"># Datos preprocesados</span>
+│   └── <span class="token-func">splits/</span>           <span class="token-comment"># train/val/test</span>
+├── <span class="token-func">models/</span>               <span class="token-comment"># Modelos exportados (.keras, .h5)</span>
+├── <span class="token-func">notebooks/</span>            <span class="token-comment"># Exploración y experimentación</span>
+├── <span class="token-func">src/</span>
+│   ├── <span class="token-string">data_pipeline.py</span>  <span class="token-comment"># Carga y preprocesamiento</span>
+│   ├── <span class="token-string">model.py</span>          <span class="token-comment"># Definición de arquitectura</span>
+│   ├── <span class="token-string">train.py</span>          <span class="token-comment"># Training loop</span>
+│   ├── <span class="token-string">evaluate.py</span>       <span class="token-comment"># Evaluación y métricas</span>
+│   └── <span class="token-string">predict.py</span>        <span class="token-comment"># Inferencia</span>
+├── <span class="token-string">config.yaml</span>           <span class="token-comment"># Hiperparámetros</span>
+├── <span class="token-string">Dockerfile</span>
+└── <span class="token-string">requirements.txt</span>`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Model Architectures -->
+  <section id="model-architectures">
+    <h2 class="doc-article__h2">Model Architectures</h2>
+    <p>
+      Keras ofrece tres APIs para construir modelos: <strong>Sequential</strong> (lineal),
+      <strong>Functional</strong> (DAG) y <strong>Subclassing</strong> (máxima flexibilidad).
+    </p>
+
+    <h3 class="doc-article__h3">Sequential API — CNN para clasificación</h3>
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-keyword">import</span> keras
+<span class="token-keyword">from</span> keras <span class="token-keyword">import</span> layers
+
+<span class="token-keyword">def</span> <span class="token-func">build_cnn</span>(input_shape=(<span class="token-string">224</span>, <span class="token-string">224</span>, <span class="token-string">3</span>), num_classes=<span class="token-string">10</span>):
+    model = keras.<span class="token-func">Sequential</span>([
+        <span class="token-comment"># Bloque 1: Extracción de features</span>
+        layers.<span class="token-func">Conv2D</span>(<span class="token-string">32</span>, (<span class="token-string">3</span>, <span class="token-string">3</span>), activation=<span class="token-string">"relu"</span>, input_shape=input_shape),
+        layers.<span class="token-func">BatchNormalization</span>(),
+        layers.<span class="token-func">MaxPooling2D</span>((<span class="token-string">2</span>, <span class="token-string">2</span>)),
+
+        <span class="token-comment"># Bloque 2: Features más complejas</span>
+        layers.<span class="token-func">Conv2D</span>(<span class="token-string">64</span>, (<span class="token-string">3</span>, <span class="token-string">3</span>), activation=<span class="token-string">"relu"</span>),
+        layers.<span class="token-func">BatchNormalization</span>(),
+        layers.<span class="token-func">MaxPooling2D</span>((<span class="token-string">2</span>, <span class="token-string">2</span>)),
+
+        <span class="token-comment"># Bloque 3: Features de alto nivel</span>
+        layers.<span class="token-func">Conv2D</span>(<span class="token-string">128</span>, (<span class="token-string">3</span>, <span class="token-string">3</span>), activation=<span class="token-string">"relu"</span>),
+        layers.<span class="token-func">BatchNormalization</span>(),
+        layers.<span class="token-func">GlobalAveragePooling2D</span>(),
+
+        <span class="token-comment"># Clasificador</span>
+        layers.<span class="token-func">Dense</span>(<span class="token-string">256</span>, activation=<span class="token-string">"relu"</span>),
+        layers.<span class="token-func">Dropout</span>(<span class="token-string">0.5</span>),
+        layers.<span class="token-func">Dense</span>(num_classes, activation=<span class="token-string">"softmax"</span>),
+    ])
+    <span class="token-keyword">return</span> model`} />
+    </CodeBlock>
+
+    <h3 class="doc-article__h3">Functional API — Transfer Learning</h3>
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-keyword">def</span> <span class="token-func">build_transfer_model</span>(num_classes=<span class="token-string">10</span>, fine_tune_layers=<span class="token-string">20</span>):
+    <span class="token-string">"""EfficientNet como feature extractor + clasificador personalizado."""</span>
+
+    <span class="token-comment"># Base pre-entrenada (ImageNet)</span>
+    base = keras.applications.<span class="token-func">EfficientNetV2B0</span>(
+        include_top=<span class="token-string">False</span>,
+        weights=<span class="token-string">"imagenet"</span>,
+        input_shape=(<span class="token-string">224</span>, <span class="token-string">224</span>, <span class="token-string">3</span>),
+    )
+
+    <span class="token-comment"># Congelar capas base (solo entrenar el clasificador)</span>
+    base.trainable = <span class="token-string">False</span>
+
+    <span class="token-comment"># Functional API</span>
+    inputs = keras.<span class="token-func">Input</span>(shape=(<span class="token-string">224</span>, <span class="token-string">224</span>, <span class="token-string">3</span>))
+    x = base(inputs, training=<span class="token-string">False</span>)
+    x = layers.<span class="token-func">GlobalAveragePooling2D</span>()(x)
+    x = layers.<span class="token-func">Dense</span>(<span class="token-string">256</span>, activation=<span class="token-string">"relu"</span>)(x)
+    x = layers.<span class="token-func">Dropout</span>(<span class="token-string">0.3</span>)(x)
+    outputs = layers.<span class="token-func">Dense</span>(num_classes, activation=<span class="token-string">"softmax"</span>)(x)
+
+    model = keras.<span class="token-func">Model</span>(inputs, outputs)
+
+    <span class="token-comment"># Fine-tuning: descongelar últimas N capas</span>
+    <span class="token-keyword">for</span> layer <span class="token-keyword">in</span> base.layers[-fine_tune_layers:]:
+        layer.trainable = <span class="token-string">True</span>
+
+    <span class="token-keyword">return</span> model`} />
+    </CodeBlock>
+
+    <Callout type="tip" title="Transfer Learning workflow">
+      1. Entrenar primero con <code>base.trainable = False</code> (3-5 epochs)<br/>
+      2. Descongelar últimas capas → <code>base.layers[-20:].trainable = True</code><br/>
+      3. Fine-tune con learning rate bajo (<code>1e-5</code>) durante 5-10 epochs más
+    </Callout>
+  </section>
+
+  <!-- Training Pipeline -->
+  <section id="training-pipeline">
+    <h2 class="doc-article__h2">Training Pipeline</h2>
+    <p>
+      Un pipeline de entrenamiento robusto incluye data augmentation, callbacks para
+      early stopping, checkpointing y logging con TensorBoard.
+    </p>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-keyword">import</span> keras
+<span class="token-keyword">from</span> keras <span class="token-keyword">import</span> layers, callbacks
+
+<span class="token-comment"># ── Data Augmentation ──</span>
+augmentation = keras.<span class="token-func">Sequential</span>([
+    layers.<span class="token-func">RandomFlip</span>(<span class="token-string">"horizontal"</span>),
+    layers.<span class="token-func">RandomRotation</span>(<span class="token-string">0.1</span>),
+    layers.<span class="token-func">RandomZoom</span>(<span class="token-string">0.1</span>),
+    layers.<span class="token-func">RandomContrast</span>(<span class="token-string">0.1</span>),
+])
+
+<span class="token-comment"># ── Compilación ──</span>
+model = <span class="token-func">build_transfer_model</span>(num_classes=<span class="token-string">10</span>)
+model.<span class="token-func">compile</span>(
+    optimizer=keras.optimizers.<span class="token-func">Adam</span>(learning_rate=<span class="token-string">1e-3</span>),
+    loss=<span class="token-string">"categorical_crossentropy"</span>,
+    metrics=[<span class="token-string">"accuracy"</span>, keras.metrics.<span class="token-func">F1Score</span>(average=<span class="token-string">"macro"</span>)],
+)
+
+<span class="token-comment"># ── Callbacks ──</span>
+cb = [
+    callbacks.<span class="token-func">EarlyStopping</span>(
+        monitor=<span class="token-string">"val_loss"</span>,
+        patience=<span class="token-string">10</span>,
+        restore_best_weights=<span class="token-string">True</span>,
+    ),
+    callbacks.<span class="token-func">ModelCheckpoint</span>(
+        filepath=<span class="token-string">"models/best_model.keras"</span>,
+        save_best_only=<span class="token-string">True</span>,
+        monitor=<span class="token-string">"val_accuracy"</span>,
+    ),
+    callbacks.<span class="token-func">ReduceLROnPlateau</span>(
+        monitor=<span class="token-string">"val_loss"</span>,
+        factor=<span class="token-string">0.5</span>,
+        patience=<span class="token-string">5</span>,
+        min_lr=<span class="token-string">1e-7</span>,
+    ),
+    callbacks.<span class="token-func">TensorBoard</span>(log_dir=<span class="token-string">"./logs"</span>),
+]
+
+<span class="token-comment"># ── Entrenamiento ──</span>
+history = model.<span class="token-func">fit</span>(
+    train_dataset,
+    validation_data=val_dataset,
+    epochs=<span class="token-string">50</span>,
+    callbacks=cb,
+    verbose=<span class="token-string">1</span>,
+)`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Evaluation & Metrics -->
+  <section id="evaluation-metrics">
+    <h2 class="doc-article__h2">Evaluation & Metrics</h2>
+    <p>
+      La evaluación va más allá del accuracy: en problemas desbalanceados, las métricas
+      como <strong>F1-score</strong>, <strong>precision</strong> y <strong>recall</strong>
+      son críticas.
+    </p>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-keyword">from</span> sklearn.metrics <span class="token-keyword">import</span> classification_report, confusion_matrix
+<span class="token-keyword">import</span> numpy <span class="token-keyword">as</span> np
+
+<span class="token-comment"># Evaluar en test set</span>
+test_loss, test_acc, test_f1 = model.<span class="token-func">evaluate</span>(test_dataset)
+<span class="token-func">print</span>(f<span class="token-string">"Test Loss: {test_loss:.4f}"</span>)
+<span class="token-func">print</span>(f<span class="token-string">"Test Accuracy: {test_acc:.4f}"</span>)
+<span class="token-func">print</span>(f<span class="token-string">"Test F1: {test_f1:.4f}"</span>)
+
+<span class="token-comment"># Predicciones detalladas</span>
+y_pred = model.<span class="token-func">predict</span>(test_dataset)
+y_pred_classes = np.<span class="token-func">argmax</span>(y_pred, axis=<span class="token-string">1</span>)
+
+<span class="token-comment"># Classification report completo</span>
+<span class="token-func">print</span>(<span class="token-func">classification_report</span>(
+    y_true,
+    y_pred_classes,
+    target_names=class_names,
+))`} />
+    </CodeBlock>
+
+    <div class="doc-table-wrapper custom-scroll">
+      <table class="doc-table">
+        <thead>
+          <tr><th>Métrica</th><th>Cuándo usarla</th><th>Fórmula</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Accuracy</strong></td><td>Datasets balanceados</td><td>TP+TN / Total</td></tr>
+          <tr><td><strong>Precision</strong></td><td>Minimizar falsos positivos</td><td>TP / (TP+FP)</td></tr>
+          <tr><td><strong>Recall</strong></td><td>Minimizar falsos negativos</td><td>TP / (TP+FN)</td></tr>
+          <tr><td><strong>F1-Score</strong></td><td>Balance entre precision y recall</td><td>2·P·R / (P+R)</td></tr>
+          <tr><td><strong>AUC-ROC</strong></td><td>Clasificación binaria probabilística</td><td>Área bajo ROC</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Model Export & Serving -->
+  <section id="model-export">
+    <h2 class="doc-article__h2">Model Export & Serving</h2>
+    <p>
+      El modelo entrenado se exporta en formato <code class="doc-inline-code">.keras</code>
+      (nativo) o <code class="doc-inline-code">SavedModel</code> (TensorFlow Serving).
+      Para producción, TensorFlow Serving o TFLite son las opciones estándar.
+    </p>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-comment"># Exportar modelo</span>
+model.<span class="token-func">save</span>(<span class="token-string">"models/classifier.keras"</span>)          <span class="token-comment"># Formato Keras 3</span>
+model.<span class="token-func">export</span>(<span class="token-string">"models/classifier_savedmodel"</span>)   <span class="token-comment"># TF SavedModel</span>
+
+<span class="token-comment"># Cargar modelo</span>
+loaded = keras.models.<span class="token-func">load_model</span>(<span class="token-string">"models/classifier.keras"</span>)
+
+<span class="token-comment"># ── Convertir a TFLite (edge/mobile) ──</span>
+<span class="token-keyword">import</span> tensorflow <span class="token-keyword">as</span> tf
+
+converter = tf.lite.<span class="token-func">TFLiteConverter</span>.from_saved_model(
+    <span class="token-string">"models/classifier_savedmodel"</span>
+)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_model = converter.<span class="token-func">convert</span>()
+
+<span class="token-keyword">with</span> <span class="token-func">open</span>(<span class="token-string">"models/classifier.tflite"</span>, <span class="token-string">"wb"</span>) <span class="token-keyword">as</span> f:
+    f.write(tflite_model)`} />
+    </CodeBlock>
+
+    <h3 class="doc-article__h3">FastAPI serving endpoint</h3>
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-comment"># Servir modelo con FastAPI</span>
+<span class="token-keyword">import</span> keras
+<span class="token-keyword">import</span> numpy <span class="token-keyword">as</span> np
+<span class="token-keyword">from</span> fastapi <span class="token-keyword">import</span> FastAPI, UploadFile
+<span class="token-keyword">from</span> PIL <span class="token-keyword">import</span> Image
+
+app = <span class="token-func">FastAPI</span>()
+model = keras.models.<span class="token-func">load_model</span>(<span class="token-string">"models/classifier.keras"</span>)
+
+@app.<span class="token-func">post</span>(<span class="token-string">"/predict"</span>)
+<span class="token-keyword">async def</span> <span class="token-func">predict</span>(file: UploadFile):
+    img = Image.<span class="token-func">open</span>(file.file).<span class="token-func">resize</span>((<span class="token-string">224</span>, <span class="token-string">224</span>))
+    arr = np.<span class="token-func">array</span>(img) / <span class="token-string">255.0</span>
+    arr = np.<span class="token-func">expand_dims</span>(arr, axis=<span class="token-string">0</span>)
+
+    predictions = model.<span class="token-func">predict</span>(arr)
+    class_idx = int(np.<span class="token-func">argmax</span>(predictions[<span class="token-string">0</span>]))
+    confidence = float(predictions[<span class="token-string">0</span>][class_idx])
+
+    <span class="token-keyword">return</span> {
+        <span class="token-string">"class"</span>: class_names[class_idx],
+        <span class="token-string">"confidence"</span>: <span class="token-func">round</span>(confidence, <span class="token-string">4</span>),
+    }`} />
+    </CodeBlock>
+
+    <Callout type="warning" title="Modelo en memoria">
+      Carga el modelo <strong>una sola vez</strong> al iniciar el servidor (no por petición).
+      Para múltiples workers, usa TensorFlow Serving que gestiona la memoria del modelo
+      de forma eficiente y soporta versionado automático.
+    </Callout>
+  </section>
+
+  <!-- PLACEHOLDER -->
+</article>

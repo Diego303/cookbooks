@@ -1,0 +1,206 @@
+---
+import CodeBlock from '../CodeBlock.astro';
+import Callout from '../Callout.astro';
+import DocSection from '../DocSection.astro';
+import DocImage from '../DocImage.astro';
+import DocList from '../DocList.astro';
+---
+
+<article class="doc-article">
+  <h1 class="doc-article__title">Design System</h1>
+
+  <p class="doc-article__intro">
+    Guía completa de tokens de diseño, tipografía y componentes del sistema visual
+    "Engineering Notebook". Todos los valores están disponibles como CSS custom properties.
+  </p>
+
+  <!-- Color Tokens -->
+  <section id="color-tokens">
+    <h2 class="doc-article__h2">Color Tokens</h2>
+    <p>
+      La paleta se divide en tres grupos: <strong>Base</strong> (fondos oscuros),
+      <strong>Syntax</strong> (resaltado de código) y <strong>Accents</strong> (estados UI neón).
+    </p>
+
+    <div class="doc-color-grid">
+      <div class="doc-color-swatch" style="--swatch: #0f0f11;">
+        <div class="doc-color-swatch__color"></div>
+        <span class="doc-color-swatch__name">--bg-void</span>
+        <span class="doc-color-swatch__hex">#0f0f11</span>
+      </div>
+      <div class="doc-color-swatch" style="--swatch: #18181b;">
+        <div class="doc-color-swatch__color"></div>
+        <span class="doc-color-swatch__name">--bg-surface</span>
+        <span class="doc-color-swatch__hex">#18181b</span>
+      </div>
+      <div class="doc-color-swatch" style="--swatch: #fde047;">
+        <div class="doc-color-swatch__color"></div>
+        <span class="doc-color-swatch__name">--accent-yellow</span>
+        <span class="doc-color-swatch__hex">#fde047</span>
+      </div>
+      <div class="doc-color-swatch" style="--swatch: #f472b6;">
+        <div class="doc-color-swatch__color"></div>
+        <span class="doc-color-swatch__name">--accent-pink</span>
+        <span class="doc-color-swatch__hex">#f472b6</span>
+      </div>
+      <div class="doc-color-swatch" style="--swatch: #22d3ee;">
+        <div class="doc-color-swatch__color"></div>
+        <span class="doc-color-swatch__name">--accent-cyan</span>
+        <span class="doc-color-swatch__hex">#22d3ee</span>
+      </div>
+      <div class="doc-color-swatch" style="--swatch: #86efac;">
+        <div class="doc-color-swatch__color"></div>
+        <span class="doc-color-swatch__name">--accent-green</span>
+        <span class="doc-color-swatch__hex">#86efac</span>
+      </div>
+    </div>
+
+    <CodeBlock lang="css">
+      <Fragment set:html={`<span class="token-keyword">:root</span> {
+  <span class="token-comment">/* Base */</span>
+  <span class="token-func">--bg-void</span>: <span class="token-string">#0f0f11</span>;
+  <span class="token-func">--bg-surface</span>: <span class="token-string">#18181b</span>;
+
+  <span class="token-comment">/* Neon Accents */</span>
+  <span class="token-func">--accent-yellow</span>: <span class="token-string">#fde047</span>;
+  <span class="token-func">--accent-pink</span>: <span class="token-string">#f472b6</span>;
+  <span class="token-func">--accent-cyan</span>: <span class="token-string">#22d3ee</span>;
+  <span class="token-func">--accent-green</span>: <span class="token-string">#86efac</span>;
+}`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Typography -->
+  <section id="typography">
+    <h2 class="doc-article__h2">Typography</h2>
+    <p>
+      El sistema utiliza cuatro familias tipográficas con roles específicos.
+    </p>
+
+    <div class="doc-table-wrapper custom-scroll">
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th>Fuente</th>
+            <th>Uso</th>
+            <th>Ejemplo</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code class="doc-inline-code">Inter</code></td>
+            <td>Body text, headings de documentación</td>
+            <td style="font-family: var(--font-sans);">The quick brown fox</td>
+          </tr>
+          <tr>
+            <td><code class="doc-inline-code">JetBrains Mono</code></td>
+            <td>Código, labels técnicos, rutas</td>
+            <td style="font-family: var(--font-mono);">const x = 42;</td>
+          </tr>
+          <tr>
+            <td><code class="doc-inline-code">Patrick Hand</code></td>
+            <td>Notas, subtítulos, tooltips</td>
+            <td style="font-family: var(--font-hand);">Nota al margen!</td>
+          </tr>
+          <tr>
+            <td><code class="doc-inline-code">Permanent Marker</code></td>
+            <td>Títulos de sección principales</td>
+            <td style="font-family: var(--font-marker);">HEADER</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Components -->
+  <section id="components">
+    <h2 class="doc-article__h2">Components</h2>
+    <p>
+      Componentes clave del sistema de diseño con sus especificaciones.
+    </p>
+
+    <h3 class="doc-article__h3">Botón Primario "Terminal"</h3>
+    <p>
+      Fondo blanco o negro con borde contrario. Fuente <code class="doc-inline-code">JetBrains Mono Bold</code>.
+      Hover con desplazamiento <code class="doc-inline-code">translate(-2px, -2px)</code> + box-shadow duro.
+    </p>
+
+    <CodeBlock lang="css">
+      <Fragment set:html={`<span class="token-keyword">.btn-primary</span> {
+  <span class="token-func">font-family</span>: <span class="token-string">var(--font-mono)</span>;
+  <span class="token-func">font-weight</span>: <span class="token-string">700</span>;
+  <span class="token-func">border</span>: <span class="token-string">2px solid white</span>;
+  <span class="token-func">box-shadow</span>: <span class="token-string">var(--shadow-white)</span>;
+  <span class="token-func">transition</span>: <span class="token-string">all 0.2s ease</span>;
+}
+
+<span class="token-keyword">.btn-primary:hover</span> {
+  <span class="token-func">transform</span>: <span class="token-string">translate(-2px, -2px)</span>;
+}
+
+<span class="token-keyword">.btn-primary:active</span> {
+  <span class="token-func">transform</span>: <span class="token-string">translate(0, 0)</span>;
+  <span class="token-func">box-shadow</span>: <span class="token-string">none</span>;
+}`} />
+    </CodeBlock>
+
+    <Callout type="warning" title="Sombras">
+      En este sistema NO usamos sombras difusas (blur). Solo sombras duras para
+      dar sensación de "pegatina" o recorte de papel.
+    </Callout>
+  </section>
+
+  <!-- Accessibility -->
+  <section id="accessibility">
+    <h2 class="doc-article__h2">Accessibility</h2>
+    <p>
+      Todos los acentos neón cumplen con los ratios de contraste WCAG AA sobre fondo oscuro.
+      Los estados <code class="doc-inline-code">:focus-visible</code> usan outline de
+      <code class="doc-inline-code">2px solid var(--accent-yellow)</code>.
+    </p>
+
+    <Callout type="tip" title="Contraste">
+      Usa siempre los colores de acento sobre fondos <code>--bg-void</code> o
+      <code>--bg-surface</code> para mantener el contraste. Nunca combines acentos
+      entre sí como fondo + texto.
+    </Callout>
+  </section>
+
+  <!-- PLACEHOLDER: Añade más secciones con DocSection, DocImage, DocList -->
+</article>
+
+<style>
+  .doc-color-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.75rem;
+    margin-block: 1rem;
+  }
+
+  .doc-color-swatch__color {
+    width: 100%;
+    height: 48px;
+    background: var(--swatch);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  }
+
+  .doc-color-swatch__name {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    padding: 0.375rem 0.5rem 0;
+    background: var(--bg-surface);
+  }
+
+  .doc-color-swatch__hex {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    padding: 0.125rem 0.5rem 0.375rem;
+    background: var(--bg-surface);
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  }
+</style>

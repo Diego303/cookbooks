@@ -1,0 +1,261 @@
+---
+import CodeBlock from '../CodeBlock.astro';
+import Callout from '../Callout.astro';
+import DocSection from '../DocSection.astro';
+import DocImage from '../DocImage.astro';
+import DocList from '../DocList.astro';
+---
+
+<article class="doc-article">
+  <h1 class="doc-article__title">MLFlow Versioning</h1>
+
+  <p class="doc-article__intro">
+    Sistema completo de versionado de modelos de ML con MLFlow. Cubre el tracking
+    de experimentos, el Model Registry, comparación de modelos,
+    y despliegue en producción con serving integrado.
+  </p>
+
+  <!-- Setup & Architecture -->
+  <section id="mlflow-setup">
+    <h2 class="doc-article__h2">Setup & Architecture</h2>
+    <p>
+      MLFlow tiene cuatro componentes principales: <strong>Tracking</strong> (métricas y params),
+      <strong>Projects</strong> (empaquetado), <strong>Models</strong> (formato estándar) y
+      <strong>Registry</strong> (ciclo de vida).
+    </p>
+
+    <CodeBlock lang="text">
+      <Fragment set:html={`<span class="token-comment">Arquitectura de MLFlow en producción</span>
+
+┌──────────────┐     ┌──────────────────────────────────────┐
+│  <span class="token-func">Data</span>        │     │         <span class="token-func">MLFlow Server</span>                │
+│  <span class="token-func">Scientists</span>  │────▶│                                      │
+│  (notebook)  │     │  ┌────────────┐  ┌───────────────┐  │
+└──────────────┘     │  │  <span class="token-string">Tracking</span>  │  │   <span class="token-string">Model</span>       │  │
+                     │  │  Server    │  │   Registry    │  │
+┌──────────────┐     │  └─────┬──────┘  └───────┬───────┘  │
+│  <span class="token-func">CI/CD</span>       │────▶│        │                │           │
+│  <span class="token-func">Pipeline</span>   │     └────────┼────────────────┼───────────┘
+└──────────────┘              │                │
+                     ┌────────▼──┐     ┌───────▼────────┐
+                     │ <span class="token-keyword">PostgreSQL</span>│     │  <span class="token-keyword">Artifact Store</span>│
+                     │ (metadata)│     │  (S3 / MinIO)  │
+                     └───────────┘     └────────────────┘`} />
+    </CodeBlock>
+
+    <CodeBlock lang="bash">
+      <Fragment set:html={`<span class="token-comment"># Instalar MLFlow</span>
+pip install <span class="token-string">mlflow</span>
+
+<span class="token-comment"># Iniciar servidor de tracking local</span>
+mlflow server \\
+  --backend-store-uri <span class="token-string">sqlite:///mlflow.db</span> \\
+  --default-artifact-root <span class="token-string">./mlruns</span> \\
+  --host <span class="token-string">0.0.0.0</span> \\
+  --port <span class="token-string">5000</span>
+
+<span class="token-comment"># Servidor de producción con PostgreSQL + S3</span>
+mlflow server \\
+  --backend-store-uri <span class="token-string">postgresql://user:pass@db:5432/mlflow</span> \\
+  --default-artifact-root <span class="token-string">s3://mlflow-artifacts/</span> \\
+  --host <span class="token-string">0.0.0.0</span> \\
+  --port <span class="token-string">5000</span>`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Experiment Tracking -->
+  <section id="experiment-tracking">
+    <h2 class="doc-article__h2">Experiment Tracking</h2>
+    <p>
+      Cada <em>run</em> registra parámetros, métricas y artefactos. Los experimentos
+      agrupan runs relacionados que exploran el mismo problema.
+    </p>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-keyword">import</span> mlflow
+<span class="token-keyword">import</span> mlflow.keras
+
+<span class="token-comment"># Configurar tracking server</span>
+mlflow.<span class="token-func">set_tracking_uri</span>(<span class="token-string">"http://mlflow-server:5000"</span>)
+mlflow.<span class="token-func">set_experiment</span>(<span class="token-string">"image-classifier-v2"</span>)
+
+<span class="token-comment"># ── Training run con auto-tracking ──</span>
+<span class="token-keyword">with</span> mlflow.<span class="token-func">start_run</span>(run_name=<span class="token-string">"efficientnet-fine-tune"</span>) <span class="token-keyword">as</span> run:
+    <span class="token-comment"># Registrar parámetros</span>
+    mlflow.<span class="token-func">log_params</span>({
+        <span class="token-string">"model"</span>: <span class="token-string">"EfficientNetV2B0"</span>,
+        <span class="token-string">"learning_rate"</span>: <span class="token-string">1e-3</span>,
+        <span class="token-string">"batch_size"</span>: <span class="token-string">32</span>,
+        <span class="token-string">"epochs"</span>: <span class="token-string">50</span>,
+        <span class="token-string">"fine_tune_layers"</span>: <span class="token-string">20</span>,
+        <span class="token-string">"augmentation"</span>: <span class="token-string">"flip+rotate+zoom"</span>,
+    })
+
+    <span class="token-comment"># Entrenar modelo</span>
+    history = model.<span class="token-func">fit</span>(
+        train_dataset,
+        validation_data=val_dataset,
+        epochs=<span class="token-string">50</span>,
+        callbacks=callbacks_list,
+    )
+
+    <span class="token-comment"># Registrar métricas por epoch</span>
+    <span class="token-keyword">for</span> epoch, (loss, acc) <span class="token-keyword">in</span> <span class="token-func">enumerate</span>(
+        <span class="token-func">zip</span>(history.history[<span class="token-string">"loss"</span>], history.history[<span class="token-string">"accuracy"</span>])
+    ):
+        mlflow.<span class="token-func">log_metrics</span>({
+            <span class="token-string">"train_loss"</span>: loss,
+            <span class="token-string">"train_accuracy"</span>: acc,
+        }, step=epoch)
+
+    <span class="token-comment"># Registrar métricas finales del test set</span>
+    test_loss, test_acc = model.<span class="token-func">evaluate</span>(test_dataset)
+    mlflow.<span class="token-func">log_metrics</span>({
+        <span class="token-string">"test_loss"</span>: test_loss,
+        <span class="token-string">"test_accuracy"</span>: test_acc,
+    })
+
+    <span class="token-comment"># Guardar modelo como artefacto</span>
+    mlflow.keras.<span class="token-func">log_model</span>(
+        model,
+        artifact_path=<span class="token-string">"model"</span>,
+        registered_model_name=<span class="token-string">"image-classifier"</span>,  <span class="token-comment"># Auto-registra en Model Registry</span>
+    )
+
+    <span class="token-comment"># Guardar artefactos adicionales</span>
+    mlflow.<span class="token-func">log_artifact</span>(<span class="token-string">"config.yaml"</span>)
+    mlflow.<span class="token-func">log_artifact</span>(<span class="token-string">"confusion_matrix.png"</span>)
+
+    <span class="token-func">print</span>(f<span class="token-string">"Run ID: {run.info.run_id}"</span>)`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Model Registry -->
+  <section id="model-registry">
+    <h2 class="doc-article__h2">Model Registry</h2>
+    <p>
+      El Model Registry centraliza el ciclo de vida del modelo: desde la experimentación
+      hasta la producción. Cada modelo tiene versiones con estados de transición.
+    </p>
+
+    <CodeBlock lang="text">
+      <Fragment set:html={`<span class="token-comment">Ciclo de vida del modelo en el Registry</span>
+
+ ┌─────────┐     ┌───────────┐     ┌──────────────┐     ┌──────────┐
+ │  <span class="token-string">None</span>   │────▶│ <span class="token-string">Staging</span>   │────▶│ <span class="token-string">Production</span>   │────▶│ <span class="token-string">Archived</span> │
+ │(default)│     │(validación)│    │(tráfico real) │     │(retirado)│
+ └─────────┘     └───────────┘     └──────────────┘     └──────────┘
+                       │                   │
+                       │    ┌──────────┐   │
+                       └───▶│ <span class="token-string">Rejected</span> │◀──┘
+                            └──────────┘`} />
+    </CodeBlock>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-keyword">from</span> mlflow <span class="token-keyword">import</span> MlflowClient
+
+client = <span class="token-func">MlflowClient</span>()
+
+<span class="token-comment"># Listar versiones de un modelo</span>
+versions = client.<span class="token-func">search_model_versions</span>(<span class="token-string">"name='image-classifier'"</span>)
+<span class="token-keyword">for</span> v <span class="token-keyword">in</span> versions:
+    <span class="token-func">print</span>(f<span class="token-string">"Version {v.version} | Stage: {v.current_stage} | Run: {v.run_id}"</span>)
+
+<span class="token-comment"># Promover modelo a Staging</span>
+client.<span class="token-func">transition_model_version_stage</span>(
+    name=<span class="token-string">"image-classifier"</span>,
+    version=<span class="token-string">"3"</span>,
+    stage=<span class="token-string">"Staging"</span>,
+)
+
+<span class="token-comment"># Promover a Production (reemplaza la versión anterior)</span>
+client.<span class="token-func">transition_model_version_stage</span>(
+    name=<span class="token-string">"image-classifier"</span>,
+    version=<span class="token-string">"3"</span>,
+    stage=<span class="token-string">"Production"</span>,
+    archive_existing_versions=<span class="token-string">True</span>,  <span class="token-comment"># Archiva la versión en prod actual</span>
+)`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Model Comparison -->
+  <section id="model-comparison">
+    <h2 class="doc-article__h2">Model Comparison</h2>
+    <p>
+      MLFlow permite comparar múltiples runs para identificar qué combinación de
+      hiperparámetros y arquitectura produce los mejores resultados.
+    </p>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-keyword">import</span> mlflow
+
+<span class="token-comment"># Buscar los mejores runs de un experimento</span>
+experiment = mlflow.<span class="token-func">get_experiment_by_name</span>(<span class="token-string">"image-classifier-v2"</span>)
+
+best_runs = mlflow.<span class="token-func">search_runs</span>(
+    experiment_ids=[experiment.experiment_id],
+    filter_string=<span class="token-string">"metrics.test_accuracy > 0.90"</span>,
+    order_by=[<span class="token-string">"metrics.test_accuracy DESC"</span>],
+    max_results=<span class="token-string">5</span>,
+)
+
+<span class="token-comment"># Tabla comparativa</span>
+<span class="token-func">print</span>(best_runs[[
+    <span class="token-string">"run_id"</span>,
+    <span class="token-string">"params.model"</span>,
+    <span class="token-string">"params.learning_rate"</span>,
+    <span class="token-string">"metrics.test_accuracy"</span>,
+    <span class="token-string">"metrics.test_loss"</span>,
+]].<span class="token-func">to_string</span>())
+
+<span class="token-comment"># ── Cargar modelo de un run específico ──</span>
+best_run_id = best_runs.iloc[<span class="token-string">0</span>].<span class="token-func">run_id</span>
+model = mlflow.keras.<span class="token-func">load_model</span>(f<span class="token-string">"runs:/{best_run_id}/model"</span>)`} />
+    </CodeBlock>
+
+    <Callout type="info" title="MLFlow UI">
+      Accede al dashboard en <code>http://mlflow-server:5000</code> para visualizar
+      gráficas de métricas, comparar runs side-by-side, y navegar los artefactos.
+      La UI es la forma más eficiente de explorar experimentos.
+    </Callout>
+  </section>
+
+  <!-- Deployment & Serving -->
+  <section id="deployment-serving">
+    <h2 class="doc-article__h2">Deployment & Serving</h2>
+    <p>
+      MLFlow Models puede servir modelos directamente como APIs REST o empaquetarlos
+      como contenedores Docker para despliegue en Kubernetes.
+    </p>
+
+    <CodeBlock lang="bash">
+      <Fragment set:html={`<span class="token-comment"># Servir modelo directamente desde MLFlow</span>
+mlflow models serve \\
+  -m <span class="token-string">"models:/image-classifier/Production"</span> \\
+  --port <span class="token-string">5001</span> \\
+  --no-conda
+
+<span class="token-comment"># Construir imagen Docker del modelo</span>
+mlflow models build-docker \\
+  -m <span class="token-string">"models:/image-classifier/Production"</span> \\
+  -n <span class="token-string">"image-classifier-server"</span> \\
+  --enable-mlserver
+
+<span class="token-comment"># Ejecutar contenedor</span>
+docker run -p <span class="token-string">5001:8080</span> <span class="token-string">image-classifier-server</span>
+
+<span class="token-comment"># Test con cURL</span>
+curl -X POST <span class="token-string">http://localhost:5001/invocations</span> \\
+  -H <span class="token-string">"Content-Type: application/json"</span> \\
+  -d <span class="token-string">'{"inputs": [[0.1, 0.2, ...]]}'</span>`} />
+    </CodeBlock>
+
+    <Callout type="tip" title="Versionado automático en CI">
+      Integra MLFlow en tu pipeline de CI/CD: después de entrenar, registra automáticamente
+      el modelo en el Registry. Usa GitHub Actions para promover a Staging después de
+      validar las métricas contra un threshold definido.
+    </Callout>
+  </section>
+
+  <!-- PLACEHOLDER -->
+</article>
