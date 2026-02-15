@@ -1,0 +1,654 @@
+---
+/**
+ * DocViewer — Full-page documentation reader (Starlight-like layout).
+ *
+ * Hidden by default. When a topic is selected, the page controller hides
+ * Hero/Library/Footer and shows this as the full page content.
+ *
+ * Layout:
+ *   - Left sidebar: sticky TOC navigation
+ *   - Right area: scrollable document content (native page scroll)
+ */
+import { topics } from '../data/topics';
+
+// REST API
+import BackendDoc from './docs/BackendDoc.astro';
+import FastAPIDoc from './docs/FastAPIDoc.astro';
+// UI KIT
+import DesignDoc from './docs/DesignDoc.astro';
+// DEVOPS
+import ContainersK8sDoc from './docs/ContainersK8sDoc.astro';
+import CICDDoc from './docs/CICDDoc.astro';
+// FRONTEND
+import ReactDoc from './docs/ReactDoc.astro';
+import AstroDoc from './docs/AstroDoc.astro';
+// BACKEND
+import PythonBackendDoc from './docs/PythonBackendDoc.astro';
+// ML
+import KerasDoc from './docs/KerasDoc.astro';
+import MLFlowDoc from './docs/MLFlowDoc.astro';
+// AGENTIC AI
+import AgentContainersDoc from './docs/AgentContainersDoc.astro';
+import LangChainDoc from './docs/LangChainDoc.astro';
+import GoogleA2ADoc from './docs/GoogleA2ADoc.astro';
+import MCPDoc from './docs/MCPDoc.astro';
+
+const docComponents: Record<string, any> = {
+  'fastapi-rest': FastAPIDoc,
+  'backend-integration': BackendDoc,
+  'design-system': DesignDoc,
+  'containers-k8s': ContainersK8sDoc,
+  'cicd-pipeline': CICDDoc,
+  'react-patterns': ReactDoc,
+  'astro-guide': AstroDoc,
+  'python-backend': PythonBackendDoc,
+  'keras-models': KerasDoc,
+  'mlflow-versioning': MLFlowDoc,
+  'agent-containers': AgentContainersDoc,
+  'langchain-agents': LangChainDoc,
+  'google-a2a': GoogleA2ADoc,
+  'mcp-python': MCPDoc,
+};
+---
+
+<div id="doc-viewer" class="docviewer" style="display:none;">
+
+  <!-- Full-page layout -->
+  <div class="docviewer__shell">
+
+    <!-- LEFT: Sticky sidebar -->
+    <aside class="docviewer__sidebar custom-scroll" id="doc-sidebar">
+      <!-- Back to library -->
+      <button class="docviewer__sidebar-back" id="doc-back-sidebar">
+        <i data-lucide="arrow-left" class="docviewer__sidebar-back-icon"></i>
+        Volver a Librería
+      </button>
+
+      <div class="docviewer__sidebar-divider"></div>
+
+      <!-- TOC label -->
+      <div class="docviewer__toc-label">En esta página</div>
+
+      <!-- One TOC nav per topic (toggled via JS) -->
+      {topics.map(topic => (
+        <nav
+          class="docviewer__toc"
+          data-toc-for={topic.id}
+          aria-label={`Tabla de contenidos: ${topic.title}`}
+          style="display:none;"
+        >
+          {topic.toc.map((item, idx) => (
+            <a
+              href={`#${item.id}`}
+              class={`docviewer__toc-link ${idx === 0 ? 'docviewer__toc-link--active' : ''}`}
+              data-toc-link={item.id}
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
+      ))}
+
+      <!-- Sidebar sticky note -->
+      <div class="docviewer__sidebar-note">
+        <i data-lucide="pin" class="docviewer__sidebar-note-pin"></i>
+        <p>Pulsa <kbd>Ctrl+K</kbd> para buscar en toda la librería.</p>
+      </div>
+    </aside>
+
+    <!-- MOBILE TOC: floating button + overlay (visible <1024px) -->
+    <div class="docviewer__mobile-toc" id="doc-mobile-toc">
+      <button class="docviewer__mobile-toc-btn" id="doc-mobile-toc-btn" aria-label="Tabla de contenidos">
+        <i data-lucide="list" class="docviewer__mobile-toc-btn-icon"></i>
+        <span>En esta página</span>
+      </button>
+
+      <!-- Overlay backdrop -->
+      <div class="docviewer__mobile-toc-overlay" id="doc-mobile-toc-overlay"></div>
+
+      <!-- Panel -->
+      <div class="docviewer__mobile-toc-panel" id="doc-mobile-toc-panel">
+        <div class="docviewer__mobile-toc-panel-header">
+          <span class="docviewer__toc-label">En esta página</span>
+          <button class="docviewer__mobile-toc-close" id="doc-mobile-toc-close" aria-label="Cerrar">
+            <i data-lucide="x" class="docviewer__mobile-toc-close-icon"></i>
+          </button>
+        </div>
+
+        <!-- Cloned TOC links (rendered per topic, toggled via JS) -->
+        {topics.map(topic => (
+          <nav
+            class="docviewer__toc docviewer__toc--mobile"
+            data-toc-mobile-for={topic.id}
+            aria-label={`Tabla de contenidos móvil: ${topic.title}`}
+            style="display:none;"
+          >
+            {topic.toc.map((item, idx) => (
+              <a
+                href={`#${item.id}`}
+                class={`docviewer__toc-link ${idx === 0 ? 'docviewer__toc-link--active' : ''}`}
+                data-toc-mobile-link={item.id}
+              >
+                {item.label}
+              </a>
+            ))}
+          </nav>
+        ))}
+      </div>
+    </div>
+
+    <!-- RIGHT: Document content (native page scroll) -->
+    <main class="docviewer__main" id="doc-main">
+      <!-- Breadcrumbs -->
+      <div class="docviewer__breadcrumbs" id="doc-breadcrumbs"></div>
+
+      <!-- Pre-rendered doc pages -->
+      {topics.map(topic => {
+        const DocComponent = docComponents[topic.id];
+        return (
+          <div class="docviewer__page" data-doc-page={topic.id} style="display:none;">
+            {DocComponent && <DocComponent />}
+          </div>
+        );
+      })}
+
+      <!-- End of document -->
+      <div class="docviewer__end">
+        <div class="docviewer__end-rule">
+          <span class="docviewer__end-label">END OF DOCUMENT</span>
+        </div>
+        <p class="docviewer__end-text">
+          ¿Necesitas más?
+          <button class="docviewer__end-link" id="doc-back-bottom">Volver a la Librería &rarr;</button>
+        </p>
+      </div>
+    </main>
+  </div>
+</div>
+
+<style>
+  /* ===== FULL-PAGE DOC VIEWER ===== */
+  .docviewer {
+    padding-top: 64px; /* nav height */
+    min-height: 100vh;
+    background: var(--bg-void);
+    /* Transition animation */
+    animation: docviewer-enter 0.4s ease-out both;
+  }
+
+  @keyframes docviewer-enter {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .docviewer__shell {
+    display: flex;
+    min-height: calc(100vh - 64px);
+  }
+
+  /* --- SIDEBAR --- */
+  .docviewer__sidebar {
+    display: none;
+    width: 260px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 64px;
+    height: calc(100vh - 64px);
+    overflow-y: auto;
+    padding: var(--space-lg) var(--space-lg) var(--space-xl);
+    border-right: 1px solid var(--border-default);
+    background: rgba(12, 12, 14, 1);
+  }
+
+  @media (min-width: 1024px) {
+    .docviewer__sidebar { display: flex; flex-direction: column; }
+  }
+
+  .docviewer__sidebar-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    padding: 0.5rem 0;
+    transition: color 0.2s;
+    width: 100%;
+  }
+
+  .docviewer__sidebar-back:hover { color: var(--accent-cyan); }
+  .docviewer__sidebar-back-icon { width: 14px; height: 14px; }
+
+  .docviewer__sidebar-divider {
+    height: 1px;
+    background: var(--border-default);
+    margin: var(--space-md) 0;
+  }
+
+  .docviewer__toc-label {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    margin-bottom: 0.75rem;
+  }
+
+  /* TOC links */
+  .docviewer__toc {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border-left: 1px solid var(--border-default);
+    margin-bottom: auto;
+  }
+
+  .docviewer__toc-link {
+    display: block;
+    padding: 0.5rem 0 0.5rem 1rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    border-left: 2px solid transparent;
+    margin-left: -1px;
+    transition: all 0.15s;
+  }
+
+  .docviewer__toc-link:hover {
+    color: white;
+    border-left-color: var(--text-dim);
+  }
+
+  .docviewer__toc-link--active {
+    color: var(--accent-cyan) !important;
+    border-left-color: var(--accent-cyan) !important;
+    background: linear-gradient(to right, rgba(34, 211, 238, 0.06), transparent);
+  }
+
+  /* Sidebar note */
+  .docviewer__sidebar-note {
+    position: relative;
+    margin-top: var(--space-xl);
+    padding: 0.875rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+  }
+
+  .docviewer__sidebar-note-pin {
+    position: absolute;
+    top: -8px;
+    right: -4px;
+    width: 16px;
+    height: 16px;
+    color: var(--accent-pink);
+    transform: rotate(12deg);
+    fill: currentColor;
+  }
+
+  .docviewer__sidebar-note p {
+    font-family: var(--font-hand);
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .docviewer__sidebar-note kbd {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    background: var(--bg-code);
+    border: 1px solid var(--border-default);
+    padding: 0.0625rem 0.375rem;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+  }
+
+  /* --- MAIN CONTENT --- */
+  .docviewer__main {
+    flex: 1;
+    min-width: 0;
+    max-width: 52rem;
+    padding: var(--space-2xl) var(--space-lg);
+    margin: 0 auto;
+  }
+
+  @media (min-width: 768px) {
+    .docviewer__main {
+      padding: var(--space-2xl) var(--space-3xl);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .docviewer__main {
+      margin: 0;
+      padding: var(--space-2xl) var(--space-3xl) var(--space-4xl);
+    }
+  }
+
+  /* Breadcrumbs */
+  .docviewer__breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-bottom: 2rem;
+  }
+
+  /* End of document */
+  .docviewer__end {
+    margin-top: var(--space-4xl);
+    text-align: center;
+  }
+
+  .docviewer__end-rule {
+    position: relative;
+    border-top: 1px dashed var(--border-default);
+    margin-bottom: var(--space-xl);
+  }
+
+  .docviewer__end-label {
+    position: absolute;
+    top: -0.625rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-void);
+    padding-inline: 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.1em;
+    color: var(--text-ghost);
+  }
+
+  .docviewer__end-text {
+    font-family: var(--font-hand);
+    font-size: 1.25rem;
+    color: var(--text-muted);
+  }
+
+  .docviewer__end-link {
+    color: var(--accent-yellow);
+    text-decoration: underline;
+    text-decoration-style: wavy;
+    text-underline-offset: 4px;
+    font-family: inherit;
+    font-size: inherit;
+    transition: color 0.2s;
+  }
+
+  .docviewer__end-link:hover { color: white; }
+
+  /* --- MOBILE TOC --- */
+  .docviewer__mobile-toc {
+    display: block;
+  }
+
+  @media (min-width: 1024px) {
+    .docviewer__mobile-toc { display: none; }
+  }
+
+  .docviewer__mobile-toc-btn {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    z-index: 40;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: 9999px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    transition: all 0.2s;
+  }
+
+  .docviewer__mobile-toc-btn:hover {
+    border-color: var(--accent-cyan);
+    color: white;
+  }
+
+  .docviewer__mobile-toc-btn-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .docviewer__mobile-toc-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+
+  .docviewer__mobile-toc-overlay.active {
+    display: block;
+  }
+
+  .docviewer__mobile-toc-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    background: var(--bg-surface);
+    border-top: 1px solid var(--border-default);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding: var(--space-lg);
+    max-height: 60vh;
+    overflow-y: auto;
+    transform: translateY(100%);
+    transition: transform 0.3s ease;
+  }
+
+  .docviewer__mobile-toc-panel.active {
+    transform: translateY(0);
+  }
+
+  .docviewer__mobile-toc-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-default);
+  }
+
+  .docviewer__mobile-toc-close {
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+    padding: 0.25rem;
+    transition: color 0.2s;
+  }
+
+  .docviewer__mobile-toc-close:hover {
+    color: white;
+  }
+
+  .docviewer__mobile-toc-close-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .docviewer__toc--mobile .docviewer__toc-link {
+    padding: 0.625rem 0 0.625rem 1rem;
+    font-size: 0.9375rem;
+  }
+
+  /* === SHARED DOC ARTICLE STYLES === */
+  .docviewer__main :global(.doc-article__title) {
+    font-size: clamp(1.75rem, 3vw, 2.5rem);
+    font-weight: 700;
+    color: white;
+    margin-bottom: 1.5rem;
+    letter-spacing: -0.01em;
+  }
+
+  .docviewer__main :global(.doc-article__intro) {
+    font-size: 1.125rem;
+    font-weight: 300;
+    color: var(--text-secondary);
+    line-height: 1.7;
+    margin-bottom: 2.5rem;
+    border-bottom: 1px dashed var(--border-default);
+    padding-bottom: 2rem;
+  }
+
+  .docviewer__main :global(.doc-article__h2) {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: white;
+    margin-top: 3rem;
+    margin-bottom: 1rem;
+    padding-top: 1.5rem;
+    border-top: 1px dashed var(--border-default);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    scroll-margin-top: 5rem;
+  }
+
+  .docviewer__main :global(.doc-article section:first-of-type .doc-article__h2) {
+    border-top: none;
+    padding-top: 0;
+    margin-top: 0;
+  }
+
+  .docviewer__main :global(.doc-article__h3) {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+    scroll-margin-top: 5rem;
+  }
+
+  .docviewer__main :global(.doc-article__badge) {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 400;
+    color: var(--text-secondary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+  }
+
+  .docviewer__main :global(p) {
+    color: var(--text-secondary);
+    line-height: 1.7;
+    margin-bottom: 1rem;
+  }
+
+  .docviewer__main :global(strong) {
+    color: white;
+    font-weight: 500;
+  }
+
+  /* Inline code */
+  .docviewer__main :global(.doc-inline-code) {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    padding: 0.125rem 0.375rem;
+    border-radius: var(--radius-sm);
+    color: var(--accent-pink);
+  }
+
+  .docviewer__main :global(.doc-inline-code--cyan) { color: var(--accent-cyan); }
+  .docviewer__main :global(.doc-inline-code--pink) { color: var(--accent-pink); }
+  .docviewer__main :global(.doc-inline-code--green) { color: var(--accent-green); }
+
+  /* Tables */
+  .docviewer__main :global(.doc-table-wrapper) {
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    overflow-x: auto;
+    margin-block: 1rem;
+  }
+
+  .docviewer__main :global(.doc-table) {
+    width: 100%;
+    text-align: left;
+    font-size: 0.875rem;
+    border-collapse: collapse;
+  }
+
+  .docviewer__main :global(.doc-table thead) {
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-default);
+  }
+
+  .docviewer__main :global(.doc-table th) {
+    font-family: var(--font-mono);
+    font-weight: 400;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    padding: 0.75rem 1rem;
+  }
+
+  .docviewer__main :global(.doc-table td) {
+    padding: 0.75rem 1rem;
+    color: var(--text-secondary);
+    border-bottom: 1px dashed var(--border-default);
+  }
+
+  .docviewer__main :global(.doc-table tbody tr:last-child td) {
+    border-bottom: none;
+  }
+
+  .docviewer__main :global(.doc-table tbody tr:hover) {
+    background: rgba(24, 24, 27, 0.5);
+  }
+
+  .docviewer__main :global(.doc-method) {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    color: var(--text-dim);
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.125rem 0.375rem;
+    border-radius: var(--radius-sm);
+    margin-right: 0.25rem;
+  }
+
+  /* Image styles (for DocImage within docs) */
+  .docviewer__main :global(.doc-image) {
+    margin-block: 1.5rem;
+  }
+
+  /* List styles (for DocList within docs) */
+  .docviewer__main :global(.doc-list) {
+    margin-block: 1rem;
+  }
+
+  .docviewer__main :global(.doc-list li) {
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+
+  /* SubSection h3 styles for DocSection usage */
+  .docviewer__main :global(.doc-article__subsection-title) {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    scroll-margin-top: 5rem;
+  }
+</style>

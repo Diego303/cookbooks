@@ -1,0 +1,27 @@
+---
+/**
+ * DocSection — Wrapper for documentation sections.
+ * Standardizes <section id> + <h2> structure for consistency.
+ * Use this component to add new sections to any doc page.
+ *
+ * @example
+ * <DocSection id="my-section" title="My Section" badge="New">
+ *   <p>Content here...</p>
+ * </DocSection>
+ */
+interface Props {
+  id: string;
+  title: string;
+  badge?: string;
+}
+
+const { id, title, badge } = Astro.props;
+---
+
+<section id={id}>
+  <h2 class="doc-article__h2">
+    {title}
+    {badge && <span class="doc-article__badge">{badge}</span>}
+  </h2>
+  <slot />
+</section>

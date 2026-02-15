@@ -1,0 +1,95 @@
+---
+/**
+ * Footer — Minimal footer with branding and social links.
+ */
+---
+
+<footer class="footer">
+  <div class="footer__inner container">
+    <div class="footer__brand">
+      <div class="footer__logo">
+        <i data-lucide="notebook-pen" class="footer__logo-icon"></i>
+        <span class="footer__logo-text">cookbooks_</span>
+      </div>
+      <p class="footer__license">Open Source MIT License.</p>
+    </div>
+
+    <div class="footer__links">
+      <a href="#" class="footer__link">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    background: var(--bg-void);
+    border-top: 1px solid var(--border-default);
+    padding-block: var(--space-3xl);
+  }
+
+  .footer__inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  @media (min-width: 768px) {
+    .footer__inner {
+      flex-direction: row;
+      justify-content: space-between;
+    }
+  }
+
+  .footer__brand {
+    text-align: center;
+  }
+
+  @media (min-width: 768px) {
+    .footer__brand { text-align: left; }
+  }
+
+  .footer__logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  @media (min-width: 768px) {
+    .footer__logo { justify-content: flex-start; }
+  }
+
+  .footer__logo-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--text-muted);
+  }
+
+  .footer__logo-text {
+    font-family: var(--font-marker);
+    font-size: 1.125rem;
+    color: var(--text-muted);
+  }
+
+  .footer__license {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-ghost);
+  }
+
+  .footer__links {
+    display: flex;
+    gap: 2rem;
+  }
+
+  .footer__link {
+    font-family: var(--font-hand);
+    font-size: 1.125rem;
+    color: var(--text-muted);
+    transition: color 0.2s;
+  }
+
+  .footer__link:hover { color: white; }
+</style>

@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="es" class="scroll-smooth">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cookbooks | Apuntes de Ingeniería</title>
+    <meta name="description" content="Documentación técnica con alma de cuaderno de ingeniería.">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Fonts: Inter, JetBrains Mono & Patrick Hand (Handwriting) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=Patrick+Hand&family=Permanent+Marker&display=swap"
+        rel="stylesheet">
+
+    <!-- Icons: Lucide -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                        hand: ['Patrick Hand', 'cursive'],
+                        marker: ['Permanent Marker', 'cursive'],
+                    },
+                    colors: {
+                        background: '#0f0f11',
+                        surface: '#18181b',
+                        border: '#27272a',
+                        primary: '#f4f4f5',
+                        secondary: '#a1a1aa',
+                        highlight: '#fde047', // Amarillo subrayador
+                        highlightPink: '#f472b6',
+                        highlightCyan: '#22d3ee',
+                        highlightGreen: '#86efac',
+                    },
+                    backgroundImage: {
+                        'dot-pattern': 'radial-gradient(#27272a 1px, transparent 1px)',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #0f0f11;
+            color: #f4f4f5;
+        }
+
+        .bg-dots {
+            background-size: 24px 24px;
+            background-image: radial-gradient(#3f3f46 1.5px, transparent 1.5px);
+            opacity: 0.3;
+        }
+
+        .scribble-underline {
+            position: relative;
+            display: inline-block;
+        }
+
+        .scribble-underline::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: -5px;
+            width: 100%;
+            height: 8px;
+            background-image: url("data:image/svg+xml,%3Csvg width='200' height='10' viewBox='0 0 200 10' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M2,5 Q50,9 100,5 T198,5' fill='none' stroke='%23fde047' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-size: 100% 100%;
+            opacity: 0.8;
+        }
+
+        .sketch-border {
+            border: 2px solid #27272a;
+            border-radius: 2px 255px 3px 25px / 255px 5px 225px 5px;
+            transition: all 0.3s ease;
+        }
+
+        .sketch-border:hover {
+            border-color: #fde047;
+            transform: rotate(-1deg) scale(1.02);
+        }
+
+        .sticky-note {
+            background: #18181b;
+            box-shadow: 5px 5px 0px 0px #27272a;
+            transition: transform 0.3s ease;
+        }
+
+        .sticky-note:hover {
+            transform: scale(1.02) rotate(0deg) !important;
+            z-index: 10;
+        }
+
+        /* Syntax Highlighting */
+        .token.keyword {
+            color: #c678dd;
+        }
+
+        .token.string {
+            color: #98c379;
+        }
+
+        .token.function {
+            color: #61afef;
+        }
+
+        .token.comment {
+            color: #71717a;
+            font-family: 'Patrick Hand', cursive;
+            font-size: 1.1em;
+        }
+
+        /* Custom scrollbar for code blocks and inner content */
+        .custom-scroll::-webkit-scrollbar {
+            height: 8px;
+            width: 8px;
+        }
+
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #18181b;
+        }
+
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #3f3f46;
+            border-radius: 4px;
+        }
+
+        .custom-scroll::-webkit-scrollbar-thumb:hover {
+            background: #52525b;
+        }
+    </style>
+</head>
+
+<body class="antialiased font-sans selection:bg-highlight selection:text-black">
+
+    <div class="fixed inset-0 z-[-1] pointer-events-none bg-dots"></div>
+
+    <!-- Navigation -->
+    <nav class="fixed w-full z-50 bg-[#0f0f11]/90 backdrop-blur-md border-b border-border transition-all duration-300">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Logo -->
+                <div class="flex-shrink-0 flex items-center gap-2 cursor-pointer group">
+                    <div class="relative">
+                        <i data-lucide="notebook-pen"
+                            class="h-6 w-6 text-white group-hover:text-highlight transition-colors"></i>
+                    </div>
+                    <span class="font-marker text-xl tracking-wider text-white">cookbooks_</span>
+                </div>
+
+                <!-- Desktop Menu -->
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-8 font-hand text-xl tracking-wide">
+                        <a href="#library" class="text-gray-400 hover:text-highlightCyan transition-colors">Librería</a>
+                        <a href="#doc-example"
+                            class="text-gray-400 hover:text-highlightPink transition-colors">Showcase</a>
+                        <a href="#architecture"
+                            class="text-gray-400 hover:text-highlight transition-colors">Arquitectura</a>
+                    </div>
+                </div>
+
+                <div class="hidden md:block">
+                    <a href="https://github.com" target="_blank"
+                        class="font-mono text-sm bg-surface text-white px-4 py-2 rounded border border-border hover:border-white transition-all flex items-center gap-2">
+                        <i data-lucide="github" class="h-4 w-4"></i> Star on GitHub
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <main class="pt-32 pb-16 sm:pt-40 sm:pb-24 relative overflow-hidden">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
+            <div class="text-center max-w-3xl mx-auto">
+
+                <div class="inline-block mb-4 transform -rotate-2">
+                    <span
+                        class="bg-highlightPink text-black font-hand font-bold px-3 py-1 text-lg rounded-sm shadow-[2px_2px_0px_0px_rgba(255,255,255,0.5)]">
+                        Haz crecer tu CEREBRO!
+                    </span>
+                </div>
+
+                <h1 class="text-5xl tracking-tight font-extrabold text-white sm:text-6xl md:text-7xl font-mono mb-6">
+                    Documentación para <br>
+                    <span class="scribble-underline text-white">Ingenieros.</span>
+                </h1>
+
+                <p class="mt-6 text-xl text-gray-400 font-hand tracking-wide max-w-2xl mx-auto">
+                    Olvídate de wikis corporativas aburridas. Crea "Cookbooks" técnicos con Markdown, React y diagramas
+                    interactivos.
+                </p>
+
+                <div class="mt-10 flex gap-4 justify-center">
+                    <button
+                        class="font-mono flex items-center justify-center px-8 py-4 border-2 border-white text-lg font-bold rounded-sm text-white hover:bg-white hover:text-black transition-all shadow-[4px_4px_0px_0px_#ffffff]">
+                        <i data-lucide="book" class="mr-2 h-5 w-5"></i>
+                        Leer la Documentación
+                    </button>
+                    <button
+                        class="font-hand flex items-center justify-center px-8 py-4 text-xl text-gray-400 hover:text-highlightCyan transition-colors group">
+                        Ver ejemplos <i data-lucide="arrow-down"
+                            class="ml-2 h-5 w-5 group-hover:translate-y-1 transition-transform"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- SECTION: LIVE PREVIEW (Markdown vs Render) -->
+    <section id="preview" class="py-20 bg-[#131315] border-y border-dashed border-gray-700">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="mb-12 flex items-end gap-4">
+                <h2 class="font-marker text-3xl text-white">De Markdown a <span class="text-highlightPink">Arte</span>
+                </h2>
+                <span class="font-hand text-gray-400 text-xl pb-1 hidden sm:inline-block">-> Así se ve tu código</span>
+            </div>
+
+            <div class="grid lg:grid-cols-2 gap-8">
+
+                <!-- LEFT: EDITOR (Source) -->
+                <div class="relative group">
+                    <div
+                        class="absolute -top-3 -left-3 bg-black border border-gray-600 text-gray-400 font-mono text-xs px-2 py-1 z-10">
+                        source.mdx</div>
+                    <div
+                        class="sketch-border bg-[#0a0a0a] p-6 h-full font-mono text-sm leading-relaxed text-gray-300 overflow-hidden">
+                        <span class="text-gray-500">---</span><br>
+                        <span class="text-purple-400">title</span>: <span class="text-green-400">"API
+                            Authentication"</span><br>
+                        <span class="text-gray-500">---</span><br><br>
+                        <span class="text-blue-400"># Cómo autenticarse</span><br><br>
+                        Usa el header <span class="bg-gray-800 px-1 rounded">Authorization</span> en tus
+                        peticiones.<br><br>
+                        <span class="text-gray-500">```javascript</span><br>
+                        <span class="token keyword">const</span> headers = {<br>
+                        &nbsp;&nbsp;<span class="token string">"Authorization"</span>: <span
+                            class="token string">"Bearer sk_live_..."</span><br>
+                        };<br>
+                        <span class="text-gray-500">```</span><br><br>
+                        <span class="token keyword">&lt;Callout</span> type=<span
+                            class="token string">"warning"</span><span class="token keyword">&gt;</span><br>
+                        &nbsp;&nbsp;Nunca compartas tu clave privada.<br>
+                        <span class="token keyword">&lt;/Callout&gt;</span>
+                    </div>
+                </div>
+
+                <!-- RIGHT: RENDER (Result) -->
+                <div class="relative group">
+                    <div
+                        class="absolute -top-3 -right-3 bg-highlight text-black font-hand font-bold px-3 py-1 z-10 transform rotate-2">
+                        Renderizado</div>
+
+                    <!-- Browser Window Mockup -->
+                    <div class="rounded-lg border border-gray-700 bg-[#0f0f11] overflow-hidden h-full shadow-2xl">
+                        <!-- Fake Browser Header -->
+                        <div class="bg-[#18181b] px-4 py-2 border-b border-gray-700 flex gap-2">
+                            <div class="w-3 h-3 rounded-full bg-red-500/50"></div>
+                            <div class="w-3 h-3 rounded-full bg-yellow-500/50"></div>
+                            <div class="w-3 h-3 rounded-full bg-green-500/50"></div>
+                        </div>
+
+                        <!-- Content -->
+                        <div class="p-8 font-sans">
+                            <h1 class="text-3xl font-bold text-white mb-4">Cómo autenticarse</h1>
+                            <p class="text-gray-400 mb-6 text-lg">Usa el header <code
+                                    class="bg-[#27272a] text-highlightPink px-1.5 py-0.5 rounded text-sm font-mono border border-gray-700">Authorization</code>
+                                en tus peticiones.</p>
+
+                            <!-- Code Block Rendered -->
+                            <div
+                                class="bg-[#0a0a0a] rounded border border-gray-800 p-4 mb-6 font-mono text-sm overflow-x-auto">
+                                <span class="text-purple-400">const</span> headers = {<br>
+                                &nbsp;&nbsp;<span class="text-green-400">"Authorization"</span>: <span
+                                    class="text-green-400">"Bearer sk_live_..."</span><br>
+                                };
+                            </div>
+
+                            <!-- Component Rendered -->
+                            <div class="bg-yellow-900/20 border-l-4 border-yellow-500 p-4 rounded-r">
+                                <div class="flex gap-3">
+                                    <i data-lucide="alert-triangle" class="text-yellow-500 h-6 w-6"></i>
+                                    <div>
+                                        <p class="font-bold text-yellow-500 text-sm">Advertencia</p>
+                                        <p class="text-yellow-200/80 text-sm mt-1">Nunca compartas tu clave privada en
+                                            repositorios públicos.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hand drawn arrow -->
+                    <svg class="absolute top-1/2 -left-8 w-16 h-16 text-white hidden lg:block" viewBox="0 0 100 100"
+                        fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M0,50 Q50,20 90,50" />
+                        <path d="M90,50 L80,45 M90,50 L80,55" />
+                    </svg>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- SECTION: LIBRARY (The "Books") -->
+    <section id="library" class="py-24 relative">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="font-marker text-4xl text-white">Explora la Librería</h2>
+                <p class="font-hand text-2xl text-gray-500 mt-2">Ejemplos reales de lo que puedes construir</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+
+                <!-- Book 1: API Reference -->
+                <div
+                    class="sticky-note p-6 rounded-sm relative group cursor-pointer border-t-4 border-highlightCyan hover:-translate-y-2 transition-transform">
+                    <div class="flex justify-between items-start mb-4">
+                        <div
+                            class="font-mono text-xs text-highlightCyan uppercase tracking-widest border border-highlightCyan px-2 py-0.5 rounded">
+                            REST API</div>
+                        <i data-lucide="server" class="text-gray-500 h-5 w-5"></i>
+                    </div>
+                    <h3 class="font-bold text-white text-xl mb-2 font-mono">Backend Integration</h3>
+                    <p class="text-gray-400 text-sm mb-4 leading-relaxed">
+                        Documentación completa de endpoints, esquemas JSON y ejemplos de cURL.
+                    </p>
+                    <div class="border-t border-dashed border-gray-700 pt-3 flex gap-2">
+                        <span class="text-xs text-gray-500 font-mono bg-black/30 px-2 py-1 rounded">v1.4.2</span>
+                        <span class="text-xs text-gray-500 font-mono bg-black/30 px-2 py-1 rounded">OpenAPI</span>
+                    </div>
+                </div>
+
+                <!-- Book 2: Design System -->
+                <div
+                    class="sticky-note p-6 rounded-sm relative group cursor-pointer border-t-4 border-highlightPink hover:-translate-y-2 transition-transform">
+                    <div class="flex justify-between items-start mb-4">
+                        <div
+                            class="font-mono text-xs text-highlightPink uppercase tracking-widest border border-highlightPink px-2 py-0.5 rounded">
+                            UI KIT</div>
+                        <i data-lucide="palette" class="text-gray-500 h-5 w-5"></i>
+                    </div>
+                    <h3 class="font-bold text-white text-xl mb-2 font-mono">Design System</h3>
+                    <p class="text-gray-400 text-sm mb-4 leading-relaxed">
+                        Galería de componentes visuales, tokens de color y guías de accesibilidad.
+                    </p>
+                    <div class="border-t border-dashed border-gray-700 pt-3 flex gap-2">
+                        <span class="text-xs text-gray-500 font-mono bg-black/30 px-2 py-1 rounded">Storybook</span>
+                        <span class="text-xs text-gray-500 font-mono bg-black/30 px-2 py-1 rounded">Figma</span>
+                    </div>
+                </div>
+
+                <!-- Book 3: DevOps/SRE -->
+                <div
+                    class="sticky-note p-6 rounded-sm relative group cursor-pointer border-t-4 border-highlight hover:-translate-y-2 transition-transform">
+                    <div class="flex justify-between items-start mb-4">
+                        <div
+                            class="font-mono text-xs text-highlight uppercase tracking-widest border border-highlight px-2 py-0.5 rounded">
+                            INFRA</div>
+                        <i data-lucide="container" class="text-gray-500 h-5 w-5"></i>
+                    </div>
+                    <h3 class="font-bold text-white text-xl mb-2 font-mono">SRE Runbooks</h3>
+                    <p class="text-gray-400 text-sm mb-4 leading-relaxed">
+                        Protocolos de respuesta a incidentes, post-mortems y guías de despliegue en K8s.
+                    </p>
+                    <div class="border-t border-dashed border-gray-700 pt-3 flex gap-2">
+                        <span class="text-xs text-gray-500 font-mono bg-black/30 px-2 py-1 rounded">Terraform</span>
+                        <span class="text-xs text-gray-500 font-mono bg-black/30 px-2 py-1 rounded">AWS</span>
+                    </div>
+                </div>
+
+                <!-- Book 4: React Patterns -->
+                <div
+                    class="sticky-note p-6 rounded-sm relative group cursor-pointer border-t-4 border-highlightGreen hover:-translate-y-2 transition-transform">
+                    <div class="flex justify-between items-start mb-4">
+                        <div
+                            class="font-mono text-xs text-highlightGreen uppercase tracking-widest border border-highlightGreen px-2 py-0.5 rounded">
+                            FRONTEND</div>
+                        <i data-lucide="code" class="text-gray-500 h-5 w-5"></i>
+                    </div>
+                    <h3 class="font-bold text-white text-xl mb-2 font-mono">React Patterns</h3>
+                    <p class="text-gray-400 text-sm mb-4 leading-relaxed">
+                        Colección de hooks personalizados, gestión de estado y optimización de renders.
+                    </p>
+                    <div class="border-t border-dashed border-gray-700 pt-3 flex gap-2">
+                        <span class="text-xs text-gray-500 font-mono bg-black/30 px-2 py-1 rounded">Next.js</span>
+                        <span class="text-xs text-gray-500 font-mono bg-black/30 px-2 py-1 rounded">Hooks</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- NEW SECTION: DOCUMENTATION EXAMPLE (Backend Integration) -->
+    <section id="doc-example"
+        class="py-24 bg-[#0a0a0a] border-t border-dashed border-gray-700 relative overflow-hidden">
+        <!-- Background decorative element -->
+        <div
+            class="absolute top-0 right-0 w-64 h-64 bg-highlightCyan/5 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none">
+        </div>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <span class="font-hand text-highlightCyan text-xl rotate-[-2deg] inline-block mb-2"># Real World
+                    Example</span>
+                <h2 class="font-marker text-4xl text-white">Así se lee la documentación</h2>
+                <p class="font-sans text-gray-400 mt-4 max-w-2xl mx-auto">
+                    Tipografía optimizada para lectura profunda. Sin distracciones. Justo lo que necesitas a las 3 AM.
+                </p>
+            </div>
+
+            <!-- The Doc Page Container -->
+            <div
+                class="border border-gray-800 bg-[#0f0f11] rounded-lg shadow-2xl overflow-hidden flex flex-col md:flex-row min-h-[800px]">
+
+                <!-- Sidebar (TOC) -->
+                <div class="w-full md:w-64 border-r border-gray-800 p-6 hidden md:block bg-[#0c0c0e]">
+                    <div class="font-mono text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">On this page
+                    </div>
+                    <ul class="space-y-3 font-sans text-sm border-l border-gray-800">
+                        <li><a href="#"
+                                class="block pl-4 border-l border-highlightCyan text-highlightCyan">Introduction</a>
+                        </li>
+                        <li><a href="#"
+                                class="block pl-4 border-l border-transparent text-gray-400 hover:text-white hover:border-gray-600 transition-all">Authentication</a>
+                        </li>
+                        <li><a href="#"
+                                class="block pl-4 border-l border-transparent text-gray-400 hover:text-white hover:border-gray-600 transition-all">Rate
+                                Limiting</a></li>
+                        <li><a href="#"
+                                class="block pl-4 border-l border-transparent text-gray-400 hover:text-white hover:border-gray-600 transition-all">Error
+                                Codes</a></li>
+                        <li><a href="#"
+                                class="block pl-4 border-l border-transparent text-gray-400 hover:text-white hover:border-gray-600 transition-all">Webhooks</a>
+                        </li>
+                    </ul>
+
+                    <div class="mt-8 p-4 bg-gray-900 rounded border border-gray-800 relative">
+                        <!-- Handwritten note on sidebar -->
+                        <div class="absolute -top-3 -right-2 text-highlightPink transform rotate-12">
+                            <i data-lucide="pin" class="h-5 w-5 fill-current"></i>
+                        </div>
+                        <p class="font-hand text-gray-400 text-sm">
+                            No olvides revisar los headers de paginación!
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Main Content Area -->
+                <div class="flex-1 p-8 md:p-12 overflow-y-auto custom-scroll">
+
+                    <!-- Breadcrumbs -->
+                    <div class="flex items-center gap-2 text-xs font-mono text-gray-500 mb-8">
+                        <span>Docs</span>
+                        <span>/</span>
+                        <span>Backend</span>
+                        <span>/</span>
+                        <span class="text-white">Integration Guide</span>
+                    </div>
+
+                    <h1 class="text-4xl font-bold text-white mb-6 font-sans tracking-tight">Backend Integration</h1>
+
+                    <p class="text-lg text-gray-300 leading-relaxed mb-8 font-light">
+                        Esta guía describe cómo integrar tu servicio con nuestra API RESTful. Diseñada para ser
+                        intuitiva y predecible, nuestra API utiliza características estándar de HTTP como verbos,
+                        códigos de respuesta y autenticación basada en tokens.
+                    </p>
+
+                    <div class="mb-10">
+                        <h2 class="text-2xl font-bold text-white mb-4 flex items-center gap-2">
+                            Authentication
+                            <span
+                                class="text-xs font-mono font-normal bg-gray-800 text-gray-400 px-2 py-1 rounded-full border border-gray-700">Required</span>
+                        </h2>
+                        <p class="text-gray-400 leading-relaxed mb-4">
+                            La autenticación se maneja a través del header <code
+                                class="bg-[#18181b] border border-gray-700 text-highlightCyan px-1.5 py-0.5 rounded font-mono text-sm">Authorization</code>.
+                            Debes prefijar tu token de API con la palabra clave <code>Bearer</code>.
+                        </p>
+
+                        <!-- Code Example -->
+                        <div class="relative group mt-4 mb-6">
+                            <div
+                                class="absolute -top-3 right-4 bg-gray-800 text-gray-400 text-xs px-2 py-1 rounded font-mono border border-gray-700">
+                                bash</div>
+                            <div class="bg-[#050505] border border-gray-800 rounded-md p-4 overflow-x-auto">
+                                <pre class="font-mono text-sm text-gray-300"><code>curl https://api.cookbooks.dev/v1/projects \
+  -H <span class="text-green-400">"Authorization: Bearer sk_test_51Mz..."</span> \
+  -H <span class="text-green-400">"Content-Type: application/json"</span></code></pre>
+                            </div>
+                        </div>
+
+                        <div class="bg-blue-900/10 border border-blue-900/50 p-4 rounded-lg flex gap-4 items-start">
+                            <i data-lucide="info" class="text-blue-400 h-5 w-5 mt-1 flex-shrink-0"></i>
+                            <div>
+                                <h4 class="font-bold text-blue-400 text-sm mb-1">Rolling Keys</h4>
+                                <p class="text-sm text-blue-200/70">
+                                    Si sospechas que tu clave ha sido comprometida, puedes rotarla inmediatamente desde
+                                    el panel de control. Las claves antiguas expirarán tras 24 horas.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-10">
+                        <h2 class="text-2xl font-bold text-white mb-4">Rate Limiting</h2>
+                        <p class="text-gray-400 leading-relaxed mb-4">
+                            Limitamos las peticiones para asegurar la estabilidad del sistema. Los límites actuales son
+                            de <span class="text-white font-medium">100 req/min</span> para cuentas gratuitas y <span
+                                class="text-white font-medium">1000 req/min</span> para cuentas Pro.
+                        </p>
+                        <p class="text-gray-400 leading-relaxed">
+                            Si excedes el límite, recibirás un código de estado <code
+                                class="text-highlightPink font-mono">429 Too Many Requests</code>.
+                        </p>
+                    </div>
+
+                    <div class="mb-10">
+                        <h2 class="text-2xl font-bold text-white mb-4">Core Resources</h2>
+                        <!-- Table Mockup -->
+                        <div class="border border-gray-800 rounded-lg overflow-hidden">
+                            <table class="w-full text-left text-sm">
+                                <thead class="bg-[#18181b] border-b border-gray-800 font-mono text-gray-400">
+                                    <tr>
+                                        <th class="p-4 font-normal">Resource</th>
+                                        <th class="p-4 font-normal">Description</th>
+                                        <th class="p-4 font-normal">Methods</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-800">
+                                    <tr class="group hover:bg-gray-900/50 transition-colors">
+                                        <td class="p-4 font-mono text-highlightCyan">/projects</td>
+                                        <td class="p-4 text-gray-400">Gestión de tus espacios de documentación.</td>
+                                        <td class="p-4 font-mono text-xs text-gray-500">GET, POST</td>
+                                    </tr>
+                                    <tr class="group hover:bg-gray-900/50 transition-colors">
+                                        <td class="p-4 font-mono text-highlightCyan">/deployments</td>
+                                        <td class="p-4 text-gray-400">Historial de builds y estados.</td>
+                                        <td class="p-4 font-mono text-xs text-gray-500">GET</td>
+                                    </tr>
+                                    <tr class="group hover:bg-gray-900/50 transition-colors">
+                                        <td class="p-4 font-mono text-highlightCyan">/teams</td>
+                                        <td class="p-4 text-gray-400">Miembros y permisos de acceso.</td>
+                                        <td class="p-4 font-mono text-xs text-gray-500">GET, PUT, DEL</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Handwritten "Read more" at the bottom -->
+                    <div class="mt-12 pt-8 border-t border-dashed border-gray-800 text-center relative">
+                        <div
+                            class="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-[#0f0f11] px-4 text-gray-600 font-mono text-xs">
+                            END OF SECTION</div>
+                        <p class="font-hand text-xl text-gray-500">
+                            ¿Listo para integrar? <a href="#"
+                                class="text-highlight decoration-wavy underline underline-offset-4 hover:text-white transition-colors">Obtén
+                                tu API Key -></a>
+                        </p>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- SECTION: ARCHITECTURE (Visual) -->
+    <section id="architecture" class="py-20 border-t border-dashed border-gray-700 bg-[#131315]">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-12">
+                <h2 class="font-marker text-3xl text-white tracking-widest uppercase">
+                    Architecture <span class="text-gray-600">//</span> Sketch
+                </h2>
+            </div>
+
+            <div class="relative max-w-4xl mx-auto font-mono text-sm">
+                <!-- Diagram -->
+                <div class="flex flex-col md:flex-row justify-between items-center gap-8 relative z-10">
+
+                    <!-- Node 1 -->
+                    <div class="text-center">
+                        <div
+                            class="w-24 h-24 rounded-full border-2 border-dashed border-gray-500 flex items-center justify-center bg-black hover:border-white transition-colors">
+                            <i data-lucide="file-text" class="h-8 w-8 text-white"></i>
+                        </div>
+                        <p class="mt-4 font-bold text-white">MDX Files</p>
+                    </div>
+
+                    <!-- Connection Line 1 -->
+                    <div class="h-16 w-0.5 md:h-0.5 md:w-24 bg-gray-600 relative">
+                        <div class="absolute inset-0 m-auto w-2 h-2 bg-gray-400 rounded-full animate-ping"></div>
+                    </div>
+
+                    <!-- Node 2 -->
+                    <div class="sketch-border p-6 bg-[#1f1f23] text-center relative w-48">
+                        <div
+                            class="absolute -top-3 left-8 bg-highlight text-black px-2 py-0.5 text-xs font-bold font-hand -rotate-3">
+                            Compiler</div>
+                        <i data-lucide="cpu" class="h-8 w-8 text-highlight mx-auto mb-2"></i>
+                        <p class="font-bold text-white">Build Engine</p>
+                    </div>
+
+                    <!-- Connection Line 2 -->
+                    <div class="h-16 w-0.5 md:h-0.5 md:w-24 bg-gray-600 relative">
+                        <div class="absolute inset-0 m-auto w-2 h-2 bg-gray-400 rounded-full animate-ping"
+                            style="animation-delay: 0.5s"></div>
+                    </div>
+
+                    <!-- Node 3 -->
+                    <div class="text-center">
+                        <div
+                            class="w-24 h-24 rounded bg-white flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.1)]">
+                            <i data-lucide="globe" class="h-8 w-8 text-black"></i>
+                        </div>
+                        <p class="mt-4 font-bold text-white">Static Site</p>
+                    </div>
+                </div>
+
+                <!-- Annotation -->
+                <div class="absolute top-0 right-0 hidden lg:block transform rotate-12">
+                    <p class="font-hand text-xl text-gray-500 w-32 text-center">
+                        Zero JS Runtime by default
+                        <svg class="w-8 h-8 text-gray-500 inline ml-2 rotate-90" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2">
+                            <path d="M4 4l12 12m0 0l-4-8m4 8l-8-4" />
+                        </svg>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Simple Footer -->
+    <footer class="bg-[#0f0f11] border-t border-gray-800 py-12">
+        <div class="max-w-7xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-6">
+            <div class="text-center md:text-left">
+                <div class="flex items-center justify-center md:justify-start gap-2 mb-2">
+                    <i data-lucide="notebook-pen" class="h-5 w-5 text-gray-500"></i>
+                    <span class="font-marker text-lg text-gray-500">cookbooks_</span>
+                </div>
+                <p class="font-mono text-xs text-gray-700">Open Source MIT License.</p>
+            </div>
+
+            <div class="flex gap-8 font-hand text-lg text-gray-500">
+                <a href="#" class="hover:text-white transition-colors">GitHub</a>
+                <a href="#" class="hover:text-white transition-colors">Discord</a>
+                <a href="#" class="hover:text-white transition-colors">Twitter</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        lucide.createIcons();
+
+        // Random rotation for sticky notes in Library section
+        document.querySelectorAll('#library .sticky-note').forEach(note => {
+            const rotation = Math.random() * 1.5 - 0.75;
+            note.style.transform = `rotate(${rotation}deg)`;
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,320 @@
+---
+import CodeBlock from '../CodeBlock.astro';
+import Callout from '../Callout.astro';
+import DocSection from '../DocSection.astro';
+import DocImage from '../DocImage.astro';
+import DocList from '../DocList.astro';
+---
+
+<article class="doc-article">
+  <h1 class="doc-article__title">CI/CD Pipeline</h1>
+
+  <p class="doc-article__intro">
+    Diseño e implementación de un pipeline CI/CD completo con GitHub Actions,
+    Container Registry, ArgoCD y Kubernetes. Cubre desde el commit hasta el
+    despliegue automático en producción con estrategias GitOps.
+  </p>
+
+  <!-- Pipeline Architecture -->
+  <section id="pipeline-architecture">
+    <h2 class="doc-article__h2">Pipeline Architecture</h2>
+    <p>
+      El pipeline sigue el modelo <strong>GitOps</strong>: el estado deseado de la
+      infraestructura se define en Git, y ArgoCD se encarga de sincronizar el cluster
+      con el repositorio automáticamente.
+    </p>
+
+    <CodeBlock lang="text">
+      <Fragment set:html={`<span class="token-comment">Flujo completo CI/CD</span>
+
+<span class="token-func">Developer</span>                    <span class="token-func">CI (GitHub Actions)</span>              <span class="token-func">CD (ArgoCD)</span>
+    │                              │                                │
+    │  git push                    │                                │
+    ├─────────────────────────────▶│                                │
+    │                              │  1. Lint + Test                │
+    │                              │  2. Build Docker image         │
+    │                              │  3. Push to Registry           │
+    │                              │  4. Update K8s manifests       │
+    │                              │     (image tag)                │
+    │                              ├───────────────────────────────▶│
+    │                              │                                │  5. Detect change
+    │                              │                                │  6. Sync to cluster
+    │                              │                                │  7. Health check
+    │                              │                                │
+    │◀─────────────────────────────┼────────────────────────────────┤
+    │  ✓ Deploy notification       │                                │
+
+<span class="token-comment">Repositorios:</span>
+  <span class="token-string">app-repo/</span>      → código de la aplicación + Dockerfile + CI workflows
+  <span class="token-string">infra-repo/</span>    → Helm charts / K8s manifests (fuente de verdad para ArgoCD)`} />
+    </CodeBlock>
+
+    <Callout type="info" title="¿Por qué GitOps?">
+      Con GitOps, <strong>Git es la fuente de verdad</strong>. Toda la configuración del cluster
+      está versionada. Los rollbacks son un simple <code>git revert</code>. Auditabilidad total
+      de quién cambió qué y cuándo.
+    </Callout>
+  </section>
+
+  <!-- GitHub Actions -->
+  <section id="github-actions">
+    <h2 class="doc-article__h2">GitHub Actions</h2>
+    <p>
+      El workflow de CI se ejecuta en cada push a <code class="doc-inline-code">main</code>
+      y en cada Pull Request. Incluye testing, build de imagen Docker y push al registry.
+    </p>
+
+    <CodeBlock lang="yaml">
+      <Fragment set:html={`<span class="token-comment"># .github/workflows/ci.yml</span>
+<span class="token-keyword">name</span>: <span class="token-string">CI Pipeline</span>
+
+<span class="token-keyword">on</span>:
+  <span class="token-keyword">push</span>:
+    <span class="token-keyword">branches</span>: [<span class="token-string">main</span>]
+  <span class="token-keyword">pull_request</span>:
+    <span class="token-keyword">branches</span>: [<span class="token-string">main</span>]
+
+<span class="token-keyword">env</span>:
+  <span class="token-keyword">REGISTRY</span>: <span class="token-string">ghcr.io</span>
+  <span class="token-keyword">IMAGE_NAME</span>: <span class="token-string">\${{ github.repository }}</span>
+
+<span class="token-keyword">jobs</span>:
+  <span class="token-keyword">test</span>:
+    <span class="token-keyword">runs-on</span>: <span class="token-string">ubuntu-latest</span>
+    <span class="token-keyword">steps</span>:
+      - <span class="token-keyword">uses</span>: <span class="token-string">actions/checkout@v4</span>
+
+      - <span class="token-keyword">name</span>: <span class="token-string">Set up Python</span>
+        <span class="token-keyword">uses</span>: <span class="token-string">actions/setup-python@v5</span>
+        <span class="token-keyword">with</span>:
+          <span class="token-keyword">python-version</span>: <span class="token-string">"3.12"</span>
+          <span class="token-keyword">cache</span>: <span class="token-string">"pip"</span>
+
+      - <span class="token-keyword">name</span>: <span class="token-string">Install dependencies</span>
+        <span class="token-keyword">run</span>: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - <span class="token-keyword">name</span>: <span class="token-string">Lint (Ruff)</span>
+        <span class="token-keyword">run</span>: <span class="token-string">ruff check . --output-format=github</span>
+
+      - <span class="token-keyword">name</span>: <span class="token-string">Type check (mypy)</span>
+        <span class="token-keyword">run</span>: <span class="token-string">mypy app/ --ignore-missing-imports</span>
+
+      - <span class="token-keyword">name</span>: <span class="token-string">Unit tests</span>
+        <span class="token-keyword">run</span>: <span class="token-string">pytest tests/ -v --cov=app --cov-report=xml</span>
+
+      - <span class="token-keyword">name</span>: <span class="token-string">Upload coverage</span>
+        <span class="token-keyword">uses</span>: <span class="token-string">codecov/codecov-action@v4</span>
+        <span class="token-keyword">with</span>:
+          <span class="token-keyword">file</span>: <span class="token-string">coverage.xml</span>
+
+  <span class="token-keyword">build-and-push</span>:
+    <span class="token-keyword">needs</span>: <span class="token-string">test</span>
+    <span class="token-keyword">if</span>: <span class="token-string">github.event_name == 'push' && github.ref == 'refs/heads/main'</span>
+    <span class="token-keyword">runs-on</span>: <span class="token-string">ubuntu-latest</span>
+    <span class="token-keyword">permissions</span>:
+      <span class="token-keyword">contents</span>: <span class="token-string">read</span>
+      <span class="token-keyword">packages</span>: <span class="token-string">write</span>
+    <span class="token-keyword">steps</span>:
+      - <span class="token-keyword">uses</span>: <span class="token-string">actions/checkout@v4</span>
+
+      - <span class="token-keyword">name</span>: <span class="token-string">Log in to Container Registry</span>
+        <span class="token-keyword">uses</span>: <span class="token-string">docker/login-action@v3</span>
+        <span class="token-keyword">with</span>:
+          <span class="token-keyword">registry</span>: <span class="token-string">\${{ env.REGISTRY }}</span>
+          <span class="token-keyword">username</span>: <span class="token-string">\${{ github.actor }}</span>
+          <span class="token-keyword">password</span>: <span class="token-string">\${{ secrets.GITHUB_TOKEN }}</span>
+
+      - <span class="token-keyword">name</span>: <span class="token-string">Build and push Docker image</span>
+        <span class="token-keyword">uses</span>: <span class="token-string">docker/build-push-action@v5</span>
+        <span class="token-keyword">with</span>:
+          <span class="token-keyword">context</span>: <span class="token-string">.</span>
+          <span class="token-keyword">push</span>: <span class="token-string">true</span>
+          <span class="token-keyword">tags</span>: |
+            \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}:\${{ github.sha }}
+            \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}:latest
+          <span class="token-keyword">cache-from</span>: <span class="token-string">type=gha</span>
+          <span class="token-keyword">cache-to</span>: <span class="token-string">type=gha,mode=max</span>`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Container Registry -->
+  <section id="container-registry">
+    <h2 class="doc-article__h2">Container Registry</h2>
+    <p>
+      El registry almacena las imágenes Docker construidas por CI. GitHub Container Registry
+      (ghcr.io) se integra nativamente con GitHub Actions.
+    </p>
+
+    <div class="doc-table-wrapper custom-scroll">
+      <table class="doc-table">
+        <thead>
+          <tr><th>Registry</th><th>URL</th><th>Ventaja</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>GitHub (GHCR)</td><td><code class="doc-inline-code">ghcr.io</code></td><td>Integración nativa con Actions + permisos GITHUB_TOKEN</td></tr>
+          <tr><td>Docker Hub</td><td><code class="doc-inline-code">docker.io</code></td><td>Registry público más grande, rate limits en gratuito</td></tr>
+          <tr><td>AWS ECR</td><td><code class="doc-inline-code">*.ecr.*.amazonaws.com</code></td><td>Integración IAM, scanning de vulnerabilidades</td></tr>
+          <tr><td>Google AR</td><td><code class="doc-inline-code">*-docker.pkg.dev</code></td><td>Integración GKE, vulnerability scanning</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="doc-article__h3">Estrategia de tagging</h3>
+    <CodeBlock lang="bash">
+      <Fragment set:html={`<span class="token-comment"># Tags recomendados por imagen:</span>
+ghcr.io/org/backend:<span class="token-string">abc123f</span>   <span class="token-comment"># SHA del commit (inmutable)</span>
+ghcr.io/org/backend:<span class="token-string">1.4.2</span>     <span class="token-comment"># Semver (releases)</span>
+ghcr.io/org/backend:<span class="token-string">latest</span>    <span class="token-comment"># Último build de main</span>
+
+<span class="token-comment"># NUNCA usar :latest en producción → siempre SHA o semver</span>`} />
+    </CodeBlock>
+  </section>
+
+  <!-- ArgoCD & GitOps -->
+  <section id="argocd-gitops">
+    <h2 class="doc-article__h2">ArgoCD & GitOps</h2>
+    <p>
+      ArgoCD monitorea el repositorio de infraestructura y sincroniza automáticamente
+      los manifiestos con el cluster de Kubernetes. Si detecta <em>drift</em> entre
+      el estado del cluster y Git, puede corregirlo automáticamente.
+    </p>
+
+    <CodeBlock lang="yaml">
+      <Fragment set:html={`<span class="token-comment"># argocd-application.yaml</span>
+<span class="token-keyword">apiVersion</span>: argoproj.io/v1alpha1
+<span class="token-keyword">kind</span>: Application
+<span class="token-keyword">metadata</span>:
+  <span class="token-keyword">name</span>: <span class="token-string">backend-production</span>
+  <span class="token-keyword">namespace</span>: <span class="token-string">argocd</span>
+<span class="token-keyword">spec</span>:
+  <span class="token-keyword">project</span>: <span class="token-string">default</span>
+  <span class="token-keyword">source</span>:
+    <span class="token-keyword">repoURL</span>: <span class="token-string">https://github.com/org/infra-repo.git</span>
+    <span class="token-keyword">targetRevision</span>: <span class="token-string">main</span>
+    <span class="token-keyword">path</span>: <span class="token-string">charts/backend</span>
+    <span class="token-keyword">helm</span>:
+      <span class="token-keyword">valueFiles</span>:
+        - <span class="token-string">values-production.yaml</span>
+  <span class="token-keyword">destination</span>:
+    <span class="token-keyword">server</span>: <span class="token-string">https://kubernetes.default.svc</span>
+    <span class="token-keyword">namespace</span>: <span class="token-string">production</span>
+  <span class="token-keyword">syncPolicy</span>:
+    <span class="token-keyword">automated</span>:
+      <span class="token-keyword">prune</span>: <span class="token-string">true</span>          <span class="token-comment"># Eliminar recursos huérfanos</span>
+      <span class="token-keyword">selfHeal</span>: <span class="token-string">true</span>       <span class="token-comment"># Corregir drift automáticamente</span>
+    <span class="token-keyword">syncOptions</span>:
+      - <span class="token-string">CreateNamespace=true</span>`} />
+    </CodeBlock>
+
+    <Callout type="tip" title="Auto-update de image tag">
+      Usa <strong>GitHub Actions</strong> para hacer un commit automático al infra-repo
+      actualizando el image tag después de cada build exitoso. ArgoCD detecta el
+      cambio y despliega automáticamente.
+    </Callout>
+
+    <h3 class="doc-article__h3">Step de CI que actualiza infra-repo</h3>
+    <CodeBlock lang="yaml">
+      <Fragment set:html={`<span class="token-comment"># Paso adicional en CI después del build</span>
+  <span class="token-keyword">update-manifest</span>:
+    <span class="token-keyword">needs</span>: <span class="token-string">build-and-push</span>
+    <span class="token-keyword">runs-on</span>: <span class="token-string">ubuntu-latest</span>
+    <span class="token-keyword">steps</span>:
+      - <span class="token-keyword">name</span>: <span class="token-string">Checkout infra repo</span>
+        <span class="token-keyword">uses</span>: <span class="token-string">actions/checkout@v4</span>
+        <span class="token-keyword">with</span>:
+          <span class="token-keyword">repository</span>: <span class="token-string">org/infra-repo</span>
+          <span class="token-keyword">token</span>: <span class="token-string">\${{ secrets.INFRA_REPO_TOKEN }}</span>
+
+      - <span class="token-keyword">name</span>: <span class="token-string">Update image tag</span>
+        <span class="token-keyword">run</span>: |
+          cd charts/backend
+          sed -i "s|tag:.*|tag: \${{ github.sha }}|" values-production.yaml
+          git config user.name "CI Bot"
+          git config user.email "ci@org.com"
+          git add .
+          git commit -m "chore: update backend to \${{ github.sha }}"
+          git push`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Environments -->
+  <section id="environments">
+    <h2 class="doc-article__h2">Environments</h2>
+    <p>
+      La separación de entornos asegura que los cambios se validen progresivamente
+      antes de llegar a producción. Cada entorno tiene su propio namespace y
+      configuración en K8s.
+    </p>
+
+    <div class="doc-table-wrapper custom-scroll">
+      <table class="doc-table">
+        <thead>
+          <tr><th>Entorno</th><th>Trigger</th><th>Namespace</th><th>Réplicas</th><th>Propósito</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Dev</strong></td><td>Push a branch</td><td><code class="doc-inline-code">dev</code></td><td>1</td><td>Testing rápido de features</td></tr>
+          <tr><td><strong>Staging</strong></td><td>PR → main</td><td><code class="doc-inline-code">staging</code></td><td>2</td><td>Validación pre-producción</td></tr>
+          <tr><td><strong>Production</strong></td><td>Merge a main</td><td><code class="doc-inline-code">production</code></td><td>3-10</td><td>Tráfico real</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <CodeBlock lang="text">
+      <Fragment set:html={`<span class="token-comment">Flujo de promoción entre environments</span>
+
+  <span class="token-string">feature-branch</span>          <span class="token-string">main</span>
+       │                     │
+       │  PR created         │
+       ├────────────────────▶│
+       │                     │
+   <span class="token-func">[ Dev ]</span>              <span class="token-func">[ Staging ]</span>         <span class="token-func">[ Production ]</span>
+   Auto-deploy          Auto-deploy          Auto-deploy
+   on push              on PR merge          on manifest update
+       │                     │                     │
+       ▼                     ▼                     ▼
+   1 replica             2 replicas           3-10 replicas
+   No monitoring         Alertas test         Full observability`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Rollback Strategies -->
+  <section id="rollback-strategies">
+    <h2 class="doc-article__h2">Rollback Strategies</h2>
+    <p>
+      Cuando un deploy falla, necesitas volver al estado anterior de forma rápida y confiable.
+    </p>
+
+    <h3 class="doc-article__h3">GitOps rollback (recomendado)</h3>
+    <CodeBlock lang="bash">
+      <Fragment set:html={`<span class="token-comment"># En el infra-repo: revertir el commit que actualizó el tag</span>
+git revert HEAD
+git push
+<span class="token-comment"># ArgoCD detecta el cambio y sincroniza al tag anterior</span>`} />
+    </CodeBlock>
+
+    <h3 class="doc-article__h3">K8s rollback directo</h3>
+    <CodeBlock lang="bash">
+      <Fragment set:html={`<span class="token-comment"># Ver historial de rollouts</span>
+kubectl rollout history deployment/backend -n production
+
+<span class="token-comment"># Rollback a la revisión anterior</span>
+kubectl rollout undo deployment/backend -n production
+
+<span class="token-comment"># Rollback a una revisión específica</span>
+kubectl rollout undo deployment/backend --to-revision=<span class="token-string">3</span> -n production
+
+<span class="token-comment"># Verificar estado</span>
+kubectl rollout status deployment/backend -n production`} />
+    </CodeBlock>
+
+    <Callout type="warning" title="Rollback K8s vs GitOps">
+      <code>kubectl rollout undo</code> causa <strong>drift</strong> entre el cluster y Git.
+      ArgoCD intentará re-sincronizar al estado de Git. Siempre prefiere el rollback
+      vía Git para mantener la consistencia.
+    </Callout>
+  </section>
+
+  <!-- PLACEHOLDER -->
+</article>

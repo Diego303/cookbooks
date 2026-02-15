@@ -1,0 +1,199 @@
+---
+/**
+ * Hero — Section 1: Landing intro with branding and CTA.
+ * "Engineering Notebook" aesthetic with scribble underlines and hard shadows.
+ */
+---
+
+<section id="hero" class="hero">
+  <div class="hero__inner container">
+    <div class="hero__content">
+
+      <!-- Badge -->
+      <div class="hero__badge-wrapper">
+        <span class="hero__badge">Haz crecer tu CEREBRO!</span>
+      </div>
+
+      <!-- Headline -->
+      <h1 class="hero__title">
+        Documentación para<br />
+        <span class="scribble-underline">Ingenieros.</span>
+      </h1>
+
+      <!-- Subtitle -->
+      <p class="hero__subtitle">
+        Documentación técnica clara y práctica para múltiples ámbitos:
+        backend, frontend, DevOps, machine learning e inteligencia artificial agéntica.
+        Todo en un solo lugar, con ejemplos reales y código listo para producción.
+      </p>
+
+      <!-- CTAs -->
+      <div class="hero__actions">
+        <a href="#library" class="hero__btn-primary">
+          <i data-lucide="book" class="hero__btn-icon"></i>
+          Explorar Librería
+        </a>
+        <a href="#library" class="hero__btn-secondary">
+          Ver ejemplos
+          <i data-lucide="arrow-down" class="hero__btn-arrow"></i>
+        </a>
+      </div>
+    </div>
+
+    <!-- Decorative annotation -->
+    <div class="hero__annotation" aria-hidden="true">
+      <p>No es magia, es ingeniería</p>
+      <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M8 8 L28 28 M28 28 L20 24 M28 28 L24 20" />
+      </svg>
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    padding-top: 8rem;
+    padding-bottom: 4rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  @media (min-width: 640px) {
+    .hero {
+      padding-top: 10rem;
+      padding-bottom: 6rem;
+    }
+  }
+
+  .hero__inner {
+    position: relative;
+  }
+
+  .hero__content {
+    text-align: center;
+    max-width: 48rem;
+    margin-inline: auto;
+  }
+
+  /* Badge */
+  .hero__badge-wrapper {
+    display: inline-block;
+    margin-bottom: 1rem;
+    transform: rotate(-2deg);
+  }
+
+  .hero__badge {
+    display: inline-block;
+    background: var(--accent-pink);
+    color: #000;
+    font-family: var(--font-hand);
+    font-weight: 700;
+    font-size: 1.125rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: var(--radius-sm);
+    box-shadow: 2px 2px 0px 0px rgba(255, 255, 255, 0.5);
+  }
+
+  /* Title */
+  .hero__title {
+    font-family: var(--font-mono);
+    font-size: clamp(2.5rem, 6vw, 4.5rem);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: white;
+    margin-bottom: 1.5rem;
+  }
+
+  /* Subtitle */
+  .hero__subtitle {
+    font-family: var(--font-hand);
+    font-size: 1.25rem;
+    letter-spacing: 0.02em;
+    color: var(--text-secondary);
+    max-width: 40rem;
+    margin-inline: auto;
+    margin-top: 1.5rem;
+  }
+
+  /* Actions */
+  .hero__actions {
+    margin-top: 2.5rem;
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .hero__btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 1rem 2rem;
+    font-family: var(--font-mono);
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: white;
+    border: 2px solid white;
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-white);
+    transition: all 0.2s ease;
+  }
+
+  .hero__btn-primary:hover {
+    background: white;
+    color: black;
+    transform: translate(-2px, -2px);
+  }
+
+  .hero__btn-primary:active {
+    transform: translate(0, 0);
+    box-shadow: none;
+  }
+
+  .hero__btn-icon { width: 20px; height: 20px; }
+
+  .hero__btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem 2rem;
+    font-family: var(--font-hand);
+    font-size: 1.25rem;
+    color: var(--text-secondary);
+    transition: color 0.2s;
+  }
+
+  .hero__btn-secondary:hover {
+    color: var(--accent-cyan);
+  }
+
+  .hero__btn-secondary:hover .hero__btn-arrow {
+    transform: translateY(4px);
+  }
+
+  .hero__btn-arrow {
+    width: 20px;
+    height: 20px;
+    transition: transform 0.2s;
+  }
+
+  /* Annotation */
+  .hero__annotation {
+    display: none;
+    position: absolute;
+    top: 2rem;
+    right: 0;
+    transform: rotate(8deg);
+    font-family: var(--font-hand);
+    font-size: 1.125rem;
+    color: var(--text-muted);
+    width: 10rem;
+    text-align: center;
+  }
+
+  @media (min-width: 1024px) {
+    .hero__annotation { display: block; }
+  }
+</style>

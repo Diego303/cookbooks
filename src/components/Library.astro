@@ -1,0 +1,312 @@
+---
+/**
+ * Library — Section 2: Searchable, filterable grid of documentation topics.
+ * Contains the search bar, category filters, and card grid.
+ */
+import LibraryCard from './LibraryCard.astro';
+import { topics, categories } from '../data/topics';
+---
+
+<section id="library" class="library">
+  <div class="library__inner container">
+
+    <!-- Section Header -->
+    <div class="library__header">
+      <h2 class="library__title">Explora la Librería</h2>
+      <p class="library__subtitle">Selecciona un cookbook para leer la documentación completa</p>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="library__search-wrapper">
+      <div class="library__search">
+        <i data-lucide="search" class="library__search-icon"></i>
+        <input
+          type="text"
+          id="library-search"
+          class="library__search-input"
+          placeholder="Buscar documentación..."
+          autocomplete="off"
+        />
+        <span class="library__search-shortcut">Ctrl+K</span>
+      </div>
+    </div>
+
+    <!-- Category Filters -->
+    <div class="library__filters" id="library-filters">
+      {categories.map(cat => (
+        <button
+          class={`library__filter ${cat.value === 'all' ? 'library__filter--active' : ''}`}
+          data-filter={cat.value}
+          data-color={cat.value === 'all' ? 'white' : cat.color}
+        >
+          {cat.label}
+        </button>
+      ))}
+    </div>
+
+    <!-- Card Grid -->
+    <div class="library__grid" id="library-grid">
+      {topics.map(topic => (
+        <LibraryCard
+          id={topic.id}
+          title={topic.title}
+          category={topic.category}
+          categoryColor={topic.categoryColor}
+          icon={topic.icon}
+          description={topic.description}
+          tags={topic.tags}
+        />
+      ))}
+    </div>
+
+    <!-- Empty state -->
+    <div class="library__empty hidden" id="library-empty">
+      <i data-lucide="search-x" class="library__empty-icon"></i>
+      <p class="library__empty-text">No se encontraron resultados</p>
+      <p class="library__empty-hint">Intenta con otro término de búsqueda</p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .library {
+    padding-block: var(--space-4xl);
+    position: relative;
+    border-top: 1px dashed var(--border-default);
+    background: var(--bg-void);
+  }
+
+  .library__header {
+    text-align: center;
+    margin-bottom: var(--space-2xl);
+  }
+
+  .library__title {
+    font-family: var(--font-marker);
+    font-size: clamp(2rem, 4vw, 2.5rem);
+    color: white;
+  }
+
+  .library__subtitle {
+    font-family: var(--font-hand);
+    font-size: 1.375rem;
+    color: var(--text-muted);
+    margin-top: 0.5rem;
+  }
+
+  /* Search */
+  .library__search-wrapper {
+    max-width: 32rem;
+    margin-inline: auto;
+    margin-bottom: var(--space-xl);
+  }
+
+  .library__search {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: var(--bg-code);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1rem;
+    transition: border-color 0.2s;
+  }
+
+  .library__search:focus-within {
+    border-color: var(--accent-yellow);
+  }
+
+  .library__search-icon {
+    width: 18px;
+    height: 18px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+  }
+
+  .library__search-input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+  }
+
+  .library__search-input::placeholder {
+    font-family: var(--font-hand);
+    color: var(--text-dim);
+  }
+
+  .library__search-shortcut {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+  }
+
+  /* Filters */
+  .library__filters {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: var(--space-2xl);
+  }
+
+  .library__filter {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.375rem 1rem;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    background: transparent;
+    transition: all 0.2s;
+  }
+
+  .library__filter:hover {
+    border-color: var(--text-secondary);
+    color: white;
+  }
+
+  .library__filter--active {
+    color: white;
+    border-color: white;
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  /* Grid */
+  .library__grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  @media (min-width: 640px) {
+    .library__grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @media (min-width: 1024px) {
+    .library__grid { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  /* Empty state */
+  .library__empty {
+    text-align: center;
+    padding: var(--space-3xl) 0;
+  }
+
+  .library__empty.hidden { display: none; }
+
+  .library__empty-icon {
+    width: 48px;
+    height: 48px;
+    color: var(--text-ghost);
+    margin-inline: auto;
+    display: block;
+    margin-bottom: var(--space-md);
+  }
+
+  .library__empty-text {
+    font-family: var(--font-hand);
+    font-size: 1.5rem;
+    color: var(--text-muted);
+  }
+
+  .library__empty-hint {
+    font-size: 0.875rem;
+    color: var(--text-dim);
+    margin-top: 0.25rem;
+  }
+</style>
+
+<script is:inline>
+(function () {
+  const searchInput = document.getElementById('library-search');
+  const grid = document.getElementById('library-grid');
+  const emptyState = document.getElementById('library-empty');
+  const filterBtns = document.querySelectorAll('#library-filters .library__filter');
+
+  let activeCategory = 'all';
+
+  function filterCards() {
+    const query = (searchInput?.value || '').toLowerCase().trim();
+    const cards = grid?.querySelectorAll('[data-topic-id]') || [];
+    let visible = 0;
+
+    cards.forEach(card => {
+      const matchesCategory =
+        activeCategory === 'all' || card.getAttribute('data-category') === activeCategory;
+      const matchesSearch =
+        !query || (card.getAttribute('data-searchable') || '').includes(query);
+
+      if (matchesCategory && matchesSearch) {
+        card.style.display = '';
+        visible++;
+      } else {
+        card.style.display = 'none';
+      }
+    });
+
+    if (emptyState) {
+      emptyState.classList.toggle('hidden', visible > 0);
+    }
+    if (grid) {
+      grid.style.display = visible > 0 ? '' : 'none';
+    }
+  }
+
+  // Search
+  searchInput?.addEventListener('input', filterCards);
+
+  // Ctrl+K shortcut
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      searchInput?.focus();
+    }
+  });
+
+  // Category filters
+  filterBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      filterBtns.forEach(b => b.classList.remove('library__filter--active'));
+      btn.classList.add('library__filter--active');
+      activeCategory = btn.getAttribute('data-filter') || 'all';
+      filterCards();
+    });
+  });
+
+  // Card click — dispatch event for DocViewer
+  grid?.addEventListener('click', (e) => {
+    const card = e.target.closest('[data-topic-id]');
+    if (!card) return;
+    const topicId = card.getAttribute('data-topic-id');
+    document.dispatchEvent(new CustomEvent('topic:select', { detail: { topicId } }));
+  });
+
+  // Card keyboard support
+  grid?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      const card = e.target.closest('[data-topic-id]');
+      if (!card) return;
+      e.preventDefault();
+      const topicId = card.getAttribute('data-topic-id');
+      document.dispatchEvent(new CustomEvent('topic:select', { detail: { topicId } }));
+    }
+  });
+
+  // Random rotation for sticky note aesthetic
+  grid?.querySelectorAll('[data-topic-id]').forEach(card => {
+    const rotation = Math.random() * 1.5 - 0.75;
+    card.style.transform = `rotate(${rotation}deg)`;
+  });
+})();
+</script>

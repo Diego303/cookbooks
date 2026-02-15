@@ -1,0 +1,83 @@
+---
+/**
+ * CodeBlock — Reusable code block with language label and copy button.
+ * Uses pre-formatted HTML with manual syntax token classes.
+ */
+interface Props {
+  lang?: string;
+}
+
+const { lang = 'bash' } = Astro.props;
+---
+
+<div class="codeblock">
+  <div class="codeblock__header">
+    <span class="codeblock__lang">{lang}</span>
+    <button class="codeblock__copy" aria-label="Copiar código" data-copy-btn>
+      <i data-lucide="copy" class="codeblock__copy-icon"></i>
+    </button>
+  </div>
+  <div class="codeblock__body custom-scroll">
+    <pre><code><slot /></code></pre>
+  </div>
+</div>
+
+<style>
+  .codeblock {
+    position: relative;
+    margin-block: 1rem;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--bg-code);
+  }
+
+  .codeblock__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 1rem;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-default);
+  }
+
+  .codeblock__lang {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+
+  .codeblock__copy {
+    display: flex;
+    align-items: center;
+    color: var(--text-dim);
+    padding: 0.25rem;
+    border-radius: var(--radius-sm);
+    transition: color 0.2s;
+  }
+
+  .codeblock__copy:hover { color: var(--accent-green); }
+
+  .codeblock__copy-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .codeblock__body {
+    padding: 1rem;
+    overflow-x: auto;
+  }
+
+  .codeblock__body pre {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.7;
+    color: var(--text-primary);
+    white-space: pre;
+  }
+
+  .codeblock__body code {
+    font-family: inherit;
+  }
+</style>

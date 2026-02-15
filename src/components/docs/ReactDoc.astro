@@ -1,0 +1,185 @@
+---
+import CodeBlock from '../CodeBlock.astro';
+import Callout from '../Callout.astro';
+import DocSection from '../DocSection.astro';
+import DocImage from '../DocImage.astro';
+import DocList from '../DocList.astro';
+---
+
+<article class="doc-article">
+  <h1 class="doc-article__title">React Patterns</h1>
+
+  <p class="doc-article__intro">
+    Colección de patrones probados en producción para aplicaciones React/Next.js.
+    Hooks personalizados, gestión de estado y estrategias de optimización.
+  </p>
+
+  <!-- Custom Hooks -->
+  <section id="custom-hooks">
+    <h2 class="doc-article__h2">Custom Hooks</h2>
+    <p>
+      Los hooks personalizados encapsulan lógica reutilizable. Sigue la convención
+      <code class="doc-inline-code">use*</code> y mantén cada hook con una sola responsabilidad.
+    </p>
+
+    <h3 class="doc-article__h3">useDebounce</h3>
+    <p>
+      Hook para debouncear valores — ideal para inputs de búsqueda que disparan
+      peticiones a una API.
+    </p>
+
+    <CodeBlock lang="typescript">
+      <Fragment set:html={`<span class="token-keyword">import</span> { useState, useEffect } <span class="token-keyword">from</span> <span class="token-string">'react'</span>;
+
+<span class="token-keyword">function</span> <span class="token-func">useDebounce</span>&lt;T&gt;(value: T, delay: number): T {
+  <span class="token-keyword">const</span> [debounced, setDebounced] = <span class="token-func">useState</span>(value);
+
+  <span class="token-func">useEffect</span>(() => {
+    <span class="token-keyword">const</span> timer = <span class="token-func">setTimeout</span>(
+      () => <span class="token-func">setDebounced</span>(value),
+      delay
+    );
+    <span class="token-keyword">return</span> () => <span class="token-func">clearTimeout</span>(timer);
+  }, [value, delay]);
+
+  <span class="token-keyword">return</span> debounced;
+}
+
+<span class="token-keyword">export default</span> useDebounce;`} />
+    </CodeBlock>
+
+    <Callout type="tip" title="Regla de los Hooks">
+      Nunca llames hooks dentro de condicionales, loops o funciones anidadas.
+      React depende del orden de llamada para asociar estado correctamente.
+    </Callout>
+  </section>
+
+  <!-- State Management -->
+  <section id="state-management">
+    <h2 class="doc-article__h2">State Management</h2>
+    <p>
+      Para estado global, usamos una combinación de <strong>React Context</strong>
+      para datos de baja frecuencia (tema, auth) y <strong>Zustand</strong> para
+      estado de alta frecuencia (UI, formularios).
+    </p>
+
+    <CodeBlock lang="typescript">
+      <Fragment set:html={`<span class="token-keyword">import</span> { create } <span class="token-keyword">from</span> <span class="token-string">'zustand'</span>;
+
+<span class="token-keyword">interface</span> Store {
+  count: number;
+  increment: () => void;
+  reset: () => void;
+}
+
+<span class="token-keyword">const</span> useStore = <span class="token-func">create</span>&lt;Store&gt;((set) => ({
+  count: <span class="token-string">0</span>,
+  <span class="token-func">increment</span>: () =>
+    <span class="token-func">set</span>((state) => ({ count: state.count + <span class="token-string">1</span> })),
+  <span class="token-func">reset</span>: () =>
+    <span class="token-func">set</span>({ count: <span class="token-string">0</span> }),
+}));`} />
+    </CodeBlock>
+
+    <div class="doc-table-wrapper custom-scroll">
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th>Solución</th>
+            <th>Cuándo usar</th>
+            <th>Complejidad</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code class="doc-inline-code">useState</code></td>
+            <td>Estado local de un componente</td>
+            <td><span style="color: var(--accent-green);">Baja</span></td>
+          </tr>
+          <tr>
+            <td><code class="doc-inline-code">useReducer</code></td>
+            <td>Estado complejo con múltiples transiciones</td>
+            <td><span style="color: var(--accent-yellow);">Media</span></td>
+          </tr>
+          <tr>
+            <td><code class="doc-inline-code">Context</code></td>
+            <td>Datos compartidos de baja frecuencia</td>
+            <td><span style="color: var(--accent-yellow);">Media</span></td>
+          </tr>
+          <tr>
+            <td><code class="doc-inline-code">Zustand</code></td>
+            <td>Estado global de alta frecuencia</td>
+            <td><span style="color: var(--accent-cyan);">Baja-Media</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Performance -->
+  <section id="performance">
+    <h2 class="doc-article__h2">Performance</h2>
+    <p>
+      La optimización prematura es la raíz de todo mal, pero hay patrones que debes
+      aplicar por defecto para evitar re-renders innecesarios.
+    </p>
+
+    <h3 class="doc-article__h3">Memoización estratégica</h3>
+    <CodeBlock lang="typescript">
+      <Fragment set:html={`<span class="token-comment">// Memo para componentes costosos en listas</span>
+<span class="token-keyword">const</span> ExpensiveRow = <span class="token-func">React.memo</span>(({ item }) => {
+  <span class="token-keyword">return</span> (
+    &lt;div className=<span class="token-string">"row"</span>&gt;
+      &lt;Chart data={item.data} /&gt;
+      &lt;span&gt;{item.label}&lt;/span&gt;
+    &lt;/div&gt;
+  );
+});
+
+<span class="token-comment">// useMemo para cálculos derivados costosos</span>
+<span class="token-keyword">const</span> sortedItems = <span class="token-func">useMemo</span>(
+  () => items.<span class="token-func">sort</span>((a, b) => b.score - a.score),
+  [items]
+);`} />
+    </CodeBlock>
+
+    <Callout type="warning" title="No abuses de useMemo">
+      <code>useMemo</code> tiene un coste de memoria. Úsalo solo cuando el cálculo
+      sea realmente costoso (>1ms) o cuando el valor se pasa como prop a un
+      componente <code>memo()</code>.
+    </Callout>
+  </section>
+
+  <!-- Testing -->
+  <section id="testing">
+    <h2 class="doc-article__h2">Testing</h2>
+    <p>
+      Usamos <strong>Vitest</strong> + <strong>Testing Library</strong>. Los tests deben
+      simular comportamiento de usuario, no detalles de implementación.
+    </p>
+
+    <CodeBlock lang="typescript">
+      <Fragment set:html={`<span class="token-keyword">import</span> { render, screen } <span class="token-keyword">from</span> <span class="token-string">'@testing-library/react'</span>;
+<span class="token-keyword">import</span> { expect, test } <span class="token-keyword">from</span> <span class="token-string">'vitest'</span>;
+<span class="token-keyword">import</span> Counter <span class="token-keyword">from</span> <span class="token-string">'./Counter'</span>;
+
+<span class="token-func">test</span>(<span class="token-string">'incrementa el contador al hacer click'</span>, () => {
+  <span class="token-func">render</span>(&lt;Counter /&gt;);
+
+  <span class="token-keyword">const</span> button = screen.<span class="token-func">getByRole</span>(<span class="token-string">'button'</span>);
+  button.<span class="token-func">click</span>();
+
+  <span class="token-func">expect</span>(
+    screen.<span class="token-func">getByText</span>(<span class="token-string">'Count: 1'</span>)
+  ).<span class="token-func">toBeInTheDocument</span>();
+});`} />
+    </CodeBlock>
+
+    <Callout type="info" title="Cobertura mínima">
+      Apunta a un 80% de cobertura en lógica de negocio. Los componentes de
+      presentación pura no necesitan tests unitarios — valida con tests visuales.
+    </Callout>
+  </section>
+
+  <!-- PLACEHOLDER: Añade más secciones con DocSection, DocImage, DocList -->
+</article>

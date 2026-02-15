@@ -1,0 +1,244 @@
+---
+/**
+ * Nav — Fixed top navigation bar.
+ * Has two modes:
+ *   - "landing": normal links (Inicio, Librería)
+ *   - "doc": back button + topic breadcrumb
+ */
+---
+
+<nav class="nav" id="main-nav">
+  <div class="nav__inner container">
+    <!-- Logo (always visible) -->
+    <a href="#hero" class="nav__logo" id="nav-logo" aria-label="Ir al inicio">
+      <i data-lucide="notebook-pen" class="nav__logo-icon"></i>
+      <span class="nav__logo-text">cookbooks_</span>
+    </a>
+
+    <!-- LANDING MODE: normal links -->
+    <div class="nav__landing" id="nav-landing">
+      <div class="nav__links">
+        <a href="#hero" class="nav__link">Inicio</a>
+        <a href="#library" class="nav__link">Librería</a>
+      </div>
+      <a
+        href="#library"
+        class="nav__cta"
+      >
+        <i data-lucide="book-open" class="nav__cta-icon"></i>
+        Explorar
+      </a>
+    </div>
+
+    <!-- DOC MODE: back + breadcrumb (hidden by default) -->
+    <div class="nav__doc" id="nav-doc">
+      <button class="nav__back-btn" id="nav-back">
+        <i data-lucide="arrow-left" class="nav__back-icon"></i>
+        <span class="nav__back-label">Librería</span>
+      </button>
+      <div class="nav__breadcrumb" id="nav-breadcrumb"></div>
+    </div>
+
+    <!-- Mobile hamburger (landing only) -->
+    <button class="nav__hamburger" id="nav-toggle" aria-label="Abrir menú">
+      <i data-lucide="menu" class="nav__hamburger-icon"></i>
+    </button>
+  </div>
+
+  <!-- Mobile menu (landing only) -->
+  <div class="nav__mobile hidden" id="nav-mobile">
+    <a href="#hero" class="nav__mobile-link">Inicio</a>
+    <a href="#library" class="nav__mobile-link">Librería</a>
+
+  </div>
+</nav>
+
+<style>
+  .nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 50;
+    background: rgba(15, 15, 17, 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border-default);
+  }
+
+  .nav__inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+    gap: 1rem;
+  }
+
+  /* Logo */
+  .nav__logo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .nav__logo-icon {
+    width: 24px;
+    height: 24px;
+    color: white;
+    transition: color 0.2s;
+  }
+
+  .nav__logo:hover .nav__logo-icon { color: var(--accent-yellow); }
+
+  .nav__logo-text {
+    font-family: var(--font-marker);
+    font-size: 1.25rem;
+    letter-spacing: 0.05em;
+    color: white;
+  }
+
+  /* --- LANDING MODE --- */
+  .nav__landing {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex: 1;
+    justify-content: flex-end;
+  }
+
+  .nav__landing.hidden { display: none; }
+
+  .nav__links {
+    display: none;
+    gap: 2rem;
+    margin-right: auto;
+    margin-left: 2rem;
+  }
+
+  .nav__link {
+    font-family: var(--font-hand);
+    font-size: 1.25rem;
+    letter-spacing: 0.02em;
+    color: var(--text-muted);
+    transition: color 0.2s;
+  }
+
+  .nav__link:hover { color: var(--accent-cyan); }
+
+  .nav__cta {
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    color: white;
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    transition: border-color 0.2s;
+  }
+
+  .nav__cta:hover { border-color: white; }
+  .nav__cta-icon { width: 16px; height: 16px; }
+
+  /* --- DOC MODE --- */
+  .nav__doc {
+    display: none;
+    align-items: center;
+    gap: 1rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .nav__doc.active { display: flex; }
+
+  .nav__back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    padding: 0.375rem 0.75rem;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+
+  .nav__back-btn:hover {
+    color: white;
+    border-color: var(--accent-cyan);
+  }
+
+  .nav__back-icon { width: 14px; height: 14px; }
+
+  .nav__breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .nav__breadcrumb :global(.bc-sep) { color: var(--text-ghost); }
+  .nav__breadcrumb :global(.bc-current) { color: var(--text-primary); }
+
+  /* Mobile hamburger */
+  .nav__hamburger {
+    display: flex;
+    align-items: center;
+    color: var(--text-secondary);
+  }
+
+  .nav__hamburger.hidden { display: none; }
+  .nav__hamburger-icon { width: 24px; height: 24px; }
+
+  /* Mobile menu */
+  .nav__mobile {
+    border-top: 1px solid var(--border-default);
+    padding: var(--space-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  .nav__mobile.hidden { display: none; }
+
+  .nav__mobile-link {
+    font-family: var(--font-hand);
+    font-size: 1.25rem;
+    color: var(--text-secondary);
+    padding: var(--space-sm) 0;
+    border-bottom: 1px dashed var(--border-default);
+    transition: color 0.2s;
+  }
+
+  .nav__mobile-link:hover { color: white; }
+
+  /* Desktop breakpoint */
+  @media (min-width: 768px) {
+    .nav__links { display: flex; }
+    .nav__cta { display: flex; }
+    .nav__hamburger { display: none; }
+  }
+</style>
+
+<script is:inline>
+  document.getElementById('nav-toggle')?.addEventListener('click', () => {
+    document.getElementById('nav-mobile')?.classList.toggle('hidden');
+  });
+
+  document.querySelectorAll('#nav-mobile a').forEach(link => {
+    link.addEventListener('click', () => {
+      document.getElementById('nav-mobile')?.classList.add('hidden');
+    });
+  });
+</script>
