@@ -50,10 +50,11 @@ import { topics } from '../data/topics';
   />
 </Layout>
 
-<script is:inline>
+<script is:inline define:vars={{ baseUrl: import.meta.env.BASE_URL }}>
 /**
  * Page Controller
  * Manages transitions between Landing Mode and Doc Mode.
+ * NOTE: baseUrl is injected via define:vars from Astro frontmatter.
  */
 (function () {
   // --- DOM References ---
@@ -405,9 +406,7 @@ import { topics } from '../data/topics';
 
   // --- Preload whiteboard iframe in background ---
   if (canvasIframe) {
-    // Use import.meta.env.BASE_URL to respect the 'base' config (e.g. /cookbooks/)
-    // BASE_URL matches the config 'base' value (including trailing slash if present)
-    const baseUrl = import.meta.env.BASE_URL;
+    // baseUrl is injected via define:vars
     canvasIframe.src = `${baseUrl}whiteboard`;
   }
 })();
