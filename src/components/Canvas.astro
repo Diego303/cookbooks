@@ -1,0 +1,165 @@
+---
+/**
+ * Canvas — Full-screen whiteboard section.
+ * Uses an iframe to load whiteboard.astro, fully isolating
+ * Excalidraw from the site's global CSS.
+ * Theme toggle in the header sends postMessage to iframe.
+ */
+---
+
+<section id="canvas-section" class="canvas-section" style="display:none;">
+  <!-- Header bar -->
+  <div class="canvas-section__header">
+    <button class="canvas-section__back" id="canvas-back">
+      <i data-lucide="arrow-left" class="canvas-section__back-icon"></i>
+      <span>Volver</span>
+    </button>
+    <div class="canvas-section__title-group">
+      <i data-lucide="pen-tool" class="canvas-section__icon"></i>
+      <h2 class="canvas-section__title">Canvas</h2>
+    </div>
+    <p class="canvas-section__hint">Pizarra interactiva — tus dibujos se guardan en tu navegador</p>
+    <button class="canvas-section__theme-btn" id="canvas-theme-toggle" title="Alternar tema claro/oscuro">
+      <span id="canvas-theme-icon">🌙</span>
+      <span id="canvas-theme-label">Oscuro</span>
+    </button>
+  </div>
+
+  <!-- Excalidraw in iframe -->
+  <iframe
+    id="canvas-iframe"
+    class="canvas-section__iframe"
+    title="Pizarra interactiva"
+    loading="lazy"
+  ></iframe>
+</section>
+
+<script is:inline>
+(function() {
+  let canvasTheme = 'light';
+  const btn = document.getElementById('canvas-theme-toggle');
+  const icon = document.getElementById('canvas-theme-icon');
+  const label = document.getElementById('canvas-theme-label');
+  const iframe = document.getElementById('canvas-iframe');
+
+  btn?.addEventListener('click', () => {
+    canvasTheme = canvasTheme === 'light' ? 'dark' : 'light';
+    icon.textContent = canvasTheme === 'light' ? '🌙' : '☀️';
+    label.textContent = canvasTheme === 'light' ? 'Oscuro' : 'Claro';
+    iframe?.contentWindow?.postMessage({ type: 'set-theme', theme: canvasTheme }, '*');
+  });
+})();
+</script>
+
+<style>
+  .canvas-section {
+    position: fixed;
+    top: 3.5rem; /* below nav */
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg-void);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 50;
+  }
+
+  /* ── Header bar ── */
+  .canvas-section__header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.625rem 1.5rem;
+    border-bottom: 1px solid var(--border-default);
+    background: var(--bg-surface);
+    flex-shrink: 0;
+  }
+
+  .canvas-section__back {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    font-family: var(--font-hand);
+    font-size: 1rem;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+  }
+
+  .canvas-section__back:hover {
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+  }
+
+  .canvas-section__back-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .canvas-section__title-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .canvas-section__icon {
+    width: 20px;
+    height: 20px;
+    color: var(--accent-cyan);
+  }
+
+  .canvas-section__title {
+    font-family: var(--font-mono);
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .canvas-section__hint {
+    margin-left: auto;
+    font-family: var(--font-hand);
+    font-size: 0.875rem;
+    color: var(--text-dim);
+  }
+
+  @media (max-width: 768px) {
+    .canvas-section__hint { display: none; }
+    .canvas-section__theme-btn { margin-left: auto; }
+  }
+
+  /* Theme toggle button */
+  .canvas-section__theme-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    font-family: var(--font-hand);
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+    flex-shrink: 0;
+  }
+
+  .canvas-section__theme-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+  }
+
+  /* ── Iframe fills all remaining space ── */
+  .canvas-section__iframe {
+    flex: 1;
+    width: 100%;
+    border: none;
+    display: block;
+  }
+</style>

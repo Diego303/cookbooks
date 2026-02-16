@@ -1,0 +1,335 @@
+---
+import CodeBlock from '../CodeBlock.astro';
+import Callout from '../Callout.astro';
+import DocSection from '../DocSection.astro';
+import DocImage from '../DocImage.astro';
+import DocList from '../DocList.astro';
+---
+
+<article class="doc-article">
+  <h1 class="doc-article__title">Apache Airflow</h1>
+
+  <p class="doc-article__intro">
+    Guía de orquestación de workflows con Apache Airflow. Cubre la arquitectura
+    del sistema, definición de DAGs, operadores, conexiones, despliegue
+    en contenedores y patrones de producción.
+  </p>
+
+  <!-- Airflow Architecture -->
+  <section id="airflow-architecture">
+    <h2 class="doc-article__h2">Arquitectura</h2>
+    <p>
+      Airflow es un <strong>orquestador de workflows programáticos</strong>
+      que define pipelines como código Python (DAGs). Sus componentes
+      principales son el Scheduler, Webserver, Workers y la base de datos de metadatos.
+    </p>
+
+    <CodeBlock lang="text">
+      <Fragment set:html={`<span class="token-comment">Arquitectura de Apache Airflow</span>
+
+┌─────────────────────────────────────────────────────────────┐
+│                    <span class="token-func">Airflow Cluster</span>                          │
+│                                                             │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
+│  │  <span class="token-keyword">Webserver</span>   │    │  <span class="token-keyword">Scheduler</span>   │    │  <span class="token-keyword">Triggerer</span>   │  │
+│  │              │    │              │    │              │  │
+│  │  UI Dashboard│    │  Parsea DAGs │    │  Deferrable  │  │
+│  │  REST API    │    │  Asigna tasks│    │  Operators   │  │
+│  │  Auth/RBAC   │    │  Heartbeats  │    │              │  │
+│  └──────┬───────┘    └──────┬───────┘    └──────────────┘  │
+│         │                   │                               │
+│  ┌──────▼───────────────────▼────────────────────────────┐  │
+│  │              <span class="token-func">Metadata Database</span> (PostgreSQL)             │  │
+│  │  DAG runs · Task instances · Variables · Connections  │  │
+│  └───────────────────────────────────────────────────────┘  │
+│                          │                                  │
+│  ┌───────────────────────▼───────────────────────────────┐  │
+│  │              <span class="token-func">Executor</span>                                  │  │
+│  │                                                       │  │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐            │  │
+│  │  │ <span class="token-string">Worker 1</span> │  │ <span class="token-string">Worker 2</span> │  │ <span class="token-string">Worker N</span> │            │  │
+│  │  │ (Celery) │  │ (Celery) │  │ (K8s Pod)│            │  │
+│  │  └──────────┘  └──────────┘  └──────────┘            │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘`} />
+    </CodeBlock>
+
+    <div class="doc-table-wrapper custom-scroll">
+      <table class="doc-table">
+        <thead>
+          <tr><th>Executor</th><th>Descripción</th><th>Caso de uso</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>LocalExecutor</strong></td><td>Ejecuta tasks en subprocesos locales</td><td>Desarrollo, cargas pequeñas</td></tr>
+          <tr><td><strong>CeleryExecutor</strong></td><td>Distribuye tasks via Celery + Redis/RabbitMQ</td><td>Producción con carga media</td></tr>
+          <tr><td><strong>KubernetesExecutor</strong></td><td>Cada task es un Pod de Kubernetes</td><td>Producción, aislamiento total</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- DAGs -->
+  <section id="dags-tasks">
+    <h2 class="doc-article__h2">DAGs & Tasks</h2>
+    <p>
+      Un <strong>DAG</strong> (Directed Acyclic Graph) define un workflow como
+      un grafo de tareas con dependencias. Se escribe en Python puro.
+    </p>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-keyword">from</span> datetime <span class="token-keyword">import</span> datetime, timedelta
+<span class="token-keyword">from</span> airflow <span class="token-keyword">import</span> DAG
+<span class="token-keyword">from</span> airflow.operators.python <span class="token-keyword">import</span> PythonOperator
+<span class="token-keyword">from</span> airflow.operators.bash <span class="token-keyword">import</span> BashOperator
+<span class="token-keyword">from</span> airflow.utils.task_group <span class="token-keyword">import</span> TaskGroup
+
+<span class="token-comment"># ── Configuración del DAG ──</span>
+default_args = {
+    <span class="token-string">"owner"</span>: <span class="token-string">"data-team"</span>,
+    <span class="token-string">"retries"</span>: <span class="token-string">3</span>,
+    <span class="token-string">"retry_delay"</span>: <span class="token-func">timedelta</span>(minutes=<span class="token-string">5</span>),
+    <span class="token-string">"email_on_failure"</span>: <span class="token-string">True</span>,
+    <span class="token-string">"email"</span>: [<span class="token-string">"alerts@company.com"</span>],
+}
+
+<span class="token-keyword">with</span> <span class="token-func">DAG</span>(
+    dag_id=<span class="token-string">"etl_daily_pipeline"</span>,
+    description=<span class="token-string">"Pipeline ETL diario: extrae, transforma y carga datos"</span>,
+    schedule=<span class="token-string">"0 6 * * *"</span>,           <span class="token-comment"># Cada día a las 6:00 UTC</span>
+    start_date=<span class="token-func">datetime</span>(<span class="token-string">2024</span>, <span class="token-string">1</span>, <span class="token-string">1</span>),
+    catchup=<span class="token-string">False</span>,                   <span class="token-comment"># No ejecutar runs pasados</span>
+    default_args=default_args,
+    tags=[<span class="token-string">"etl"</span>, <span class="token-string">"production"</span>],
+) <span class="token-keyword">as</span> dag:
+
+    <span class="token-comment"># ── Extract ──</span>
+    extract = <span class="token-func">PythonOperator</span>(
+        task_id=<span class="token-string">"extract_data"</span>,
+        python_callable=extract_from_api,
+        op_kwargs={<span class="token-string">"source"</span>: <span class="token-string">"production_db"</span>},
+    )
+
+    <span class="token-comment"># ── Transform (grupo de tareas paralelas) ──</span>
+    <span class="token-keyword">with</span> <span class="token-func">TaskGroup</span>(group_id=<span class="token-string">"transform"</span>) <span class="token-keyword">as</span> transform_group:
+        clean = <span class="token-func">PythonOperator</span>(
+            task_id=<span class="token-string">"clean_data"</span>,
+            python_callable=clean_records,
+        )
+        enrich = <span class="token-func">PythonOperator</span>(
+            task_id=<span class="token-string">"enrich_data"</span>,
+            python_callable=enrich_with_geo,
+        )
+        validate = <span class="token-func">PythonOperator</span>(
+            task_id=<span class="token-string">"validate_schema"</span>,
+            python_callable=validate_output,
+        )
+        [clean, enrich] >> validate
+
+    <span class="token-comment"># ── Load ──</span>
+    load = <span class="token-func">PythonOperator</span>(
+        task_id=<span class="token-string">"load_to_warehouse"</span>,
+        python_callable=load_to_bigquery,
+    )
+
+    <span class="token-comment"># ── Notify ──</span>
+    notify = <span class="token-func">BashOperator</span>(
+        task_id=<span class="token-string">"send_notification"</span>,
+        bash_command=<span class="token-string">'curl -X POST $SLACK_WEBHOOK -d \'{"text":"ETL completado ✅"}\''</span>,
+    )
+
+    <span class="token-comment"># ── Dependencias ──</span>
+    extract >> transform_group >> load >> notify`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Operators & Hooks -->
+  <section id="operators-hooks">
+    <h2 class="doc-article__h2">Operators & Hooks</h2>
+    <p>
+      Los <strong>Operators</strong> encapsulan tipos de trabajo. Los
+      <strong>Hooks</strong> gestionan conexiones a servicios externos.
+      Airflow tiene operadores para casi cualquier servicio cloud.
+    </p>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-keyword">from</span> airflow.providers.docker.operators.docker <span class="token-keyword">import</span> DockerOperator
+<span class="token-keyword">from</span> airflow.providers.http.operators.http <span class="token-keyword">import</span> SimpleHttpOperator
+<span class="token-keyword">from</span> airflow.providers.postgres.operators.postgres <span class="token-keyword">import</span> PostgresOperator
+<span class="token-keyword">from</span> airflow.sensors.external_task <span class="token-keyword">import</span> ExternalTaskSensor
+
+<span class="token-comment"># ── DockerOperator: ejecutar contenedor ──</span>
+run_model = <span class="token-func">DockerOperator</span>(
+    task_id=<span class="token-string">"train_model"</span>,
+    image=<span class="token-string">"ml-training:latest"</span>,
+    command=<span class="token-string">"python train.py --epochs 50"</span>,
+    docker_url=<span class="token-string">"unix:///var/run/docker.sock"</span>,
+    network_mode=<span class="token-string">"bridge"</span>,
+    auto_remove=<span class="token-string">True</span>,
+    environment={
+        <span class="token-string">"MLFLOW_TRACKING_URI"</span>: <span class="token-string">"http://mlflow:5000"</span>,
+    },
+)
+
+<span class="token-comment"># ── PostgresOperator: ejecutar SQL ──</span>
+create_table = <span class="token-func">PostgresOperator</span>(
+    task_id=<span class="token-string">"create_staging_table"</span>,
+    postgres_conn_id=<span class="token-string">"warehouse_db"</span>,
+    sql=<span class="token-string">"""
+    CREATE TABLE IF NOT EXISTS staging.daily_metrics (
+        date DATE PRIMARY KEY,
+        users_active INT,
+        revenue DECIMAL(10,2),
+        processed_at TIMESTAMP DEFAULT NOW()
+    );
+    """</span>,
+)
+
+<span class="token-comment"># ── Sensor: esperar a que otro DAG termine ──</span>
+wait_for_upstream = <span class="token-func">ExternalTaskSensor</span>(
+    task_id=<span class="token-string">"wait_for_ingestion"</span>,
+    external_dag_id=<span class="token-string">"data_ingestion"</span>,
+    external_task_id=<span class="token-string">"final_check"</span>,
+    timeout=<span class="token-string">3600</span>,       <span class="token-comment"># 1 hora máximo de espera</span>
+    mode=<span class="token-string">"reschedule"</span>,  <span class="token-comment"># Libera el worker mientras espera</span>
+)`} />
+    </CodeBlock>
+
+    <Callout type="tip" title="Deferrable Operators">
+      Usa <strong>Deferrable Operators</strong> (asyncio-based) para tareas
+      que esperan eventos externos. Liberan el worker slot mientras esperan,
+      permitiendo mayor concurrencia con menos recursos.
+    </Callout>
+  </section>
+
+  <!-- Docker Deployment -->
+  <section id="docker-deployment">
+    <h2 class="doc-article__h2">Despliegue con Docker</h2>
+    <p>
+      Airflow se despliega fácilmente con <strong>Docker Compose</strong>,
+      ideal para desarrollo y equipos pequeños. Para producción,
+      se recomienda Kubernetes con el Helm chart oficial.
+    </p>
+
+    <CodeBlock lang="yaml">
+      <Fragment set:html={`<span class="token-comment"># docker-compose.yml — Airflow con CeleryExecutor</span>
+<span class="token-keyword">x-airflow-common</span>: <span class="token-string">&airflow-common</span>
+  <span class="token-keyword">image</span>: <span class="token-string">apache/airflow:2.9.0</span>
+  <span class="token-keyword">environment</span>:
+    <span class="token-keyword">AIRFLOW__CORE__EXECUTOR</span>: <span class="token-string">CeleryExecutor</span>
+    <span class="token-keyword">AIRFLOW__DATABASE__SQL_ALCHEMY_CONN</span>: <span class="token-string">postgresql+psycopg2://airflow:airflow@postgres/airflow</span>
+    <span class="token-keyword">AIRFLOW__CELERY__BROKER_URL</span>: <span class="token-string">redis://:@redis:6379/0</span>
+    <span class="token-keyword">AIRFLOW__CELERY__RESULT_BACKEND</span>: <span class="token-string">db+postgresql://airflow:airflow@postgres/airflow</span>
+    <span class="token-keyword">AIRFLOW__WEBSERVER__SECRET_KEY</span>: <span class="token-string">'change-me-in-production'</span>
+  <span class="token-keyword">volumes</span>:
+    - <span class="token-string">./dags:/opt/airflow/dags</span>
+    - <span class="token-string">./logs:/opt/airflow/logs</span>
+    - <span class="token-string">./plugins:/opt/airflow/plugins</span>
+  <span class="token-keyword">depends_on</span>:
+    - <span class="token-string">postgres</span>
+    - <span class="token-string">redis</span>
+
+<span class="token-keyword">services</span>:
+  <span class="token-keyword">postgres</span>:
+    <span class="token-keyword">image</span>: <span class="token-string">postgres:16</span>
+    <span class="token-keyword">environment</span>:
+      <span class="token-keyword">POSTGRES_USER</span>: <span class="token-string">airflow</span>
+      <span class="token-keyword">POSTGRES_PASSWORD</span>: <span class="token-string">airflow</span>
+      <span class="token-keyword">POSTGRES_DB</span>: <span class="token-string">airflow</span>
+    <span class="token-keyword">volumes</span>:
+      - <span class="token-string">postgres-data:/var/lib/postgresql/data</span>
+
+  <span class="token-keyword">redis</span>:
+    <span class="token-keyword">image</span>: <span class="token-string">redis:7-alpine</span>
+
+  <span class="token-keyword">webserver</span>:
+    <span class="token-string"><<: *airflow-common</span>
+    <span class="token-keyword">command</span>: <span class="token-string">webserver</span>
+    <span class="token-keyword">ports</span>:
+      - <span class="token-string">"8080:8080"</span>
+
+  <span class="token-keyword">scheduler</span>:
+    <span class="token-string"><<: *airflow-common</span>
+    <span class="token-keyword">command</span>: <span class="token-string">scheduler</span>
+
+  <span class="token-keyword">worker</span>:
+    <span class="token-string"><<: *airflow-common</span>
+    <span class="token-keyword">command</span>: <span class="token-string">celery worker</span>
+    <span class="token-keyword">deploy</span>:
+      <span class="token-keyword">replicas</span>: <span class="token-string">2</span>
+
+<span class="token-keyword">volumes</span>:
+  <span class="token-keyword">postgres-data</span>:`} />
+    </CodeBlock>
+
+    <CodeBlock lang="bash">
+      <Fragment set:html={`<span class="token-comment"># Inicializar y arrancar</span>
+docker compose up airflow-init    <span class="token-comment"># Crea DB + usuario admin</span>
+docker compose up -d              <span class="token-comment"># Arrancar todos los servicios</span>
+
+<span class="token-comment"># Acceder al UI</span>
+<span class="token-comment"># http://localhost:8080 (user: airflow, pass: airflow)</span>
+
+<span class="token-comment"># CLI útil</span>
+docker compose exec webserver airflow dags list
+docker compose exec webserver airflow tasks test etl_daily_pipeline extract_data 2024-01-01`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Production Patterns -->
+  <section id="production-patterns">
+    <h2 class="doc-article__h2">Patrones de Producción</h2>
+    <p>
+      Patrones esenciales para operar Airflow en producción: idempotencia,
+      gestión de secrets, alertas y testing de DAGs.
+    </p>
+
+    <CodeBlock lang="python">
+      <Fragment set:html={`<span class="token-keyword">from</span> airflow.models <span class="token-keyword">import</span> Variable
+<span class="token-keyword">from</span> airflow.hooks.base <span class="token-keyword">import</span> BaseHook
+
+<span class="token-comment"># ── Variables y Secrets (nunca hardcodear) ──</span>
+api_key = Variable.<span class="token-func">get</span>(<span class="token-string">"api_key"</span>, deserialize_json=<span class="token-string">False</span>)
+db_conn = BaseHook.<span class="token-func">get_connection</span>(<span class="token-string">"warehouse_db"</span>)
+
+<span class="token-comment"># ── DAG idempotente: usar execution_date ──</span>
+<span class="token-keyword">def</span> <span class="token-func">extract_data</span>(**context):
+    <span class="token-comment"># Siempre usar logical_date para idempotencia</span>
+    execution_date = context[<span class="token-string">"logical_date"</span>]
+    data = api.<span class="token-func">fetch</span>(
+        start=execution_date,
+        end=execution_date + <span class="token-func">timedelta</span>(days=<span class="token-string">1</span>),
+    )
+    <span class="token-comment"># Guardar con partición por fecha</span>
+    <span class="token-func">save_to_s3</span>(
+        data,
+        key=f<span class="token-string">"raw/{execution_date.strftime('%Y-%m-%d')}/data.parquet"</span>,
+    )
+
+<span class="token-comment"># ── Testing de DAGs ──</span>
+<span class="token-keyword">import</span> pytest
+<span class="token-keyword">from</span> airflow.models <span class="token-keyword">import</span> DagBag
+
+<span class="token-keyword">def</span> <span class="token-func">test_dag_integrity</span>():
+    <span class="token-string">"""Verificar que todos los DAGs se parsean sin errores."""</span>
+    dag_bag = <span class="token-func">DagBag</span>(include_examples=<span class="token-string">False</span>)
+    <span class="token-keyword">assert</span> <span class="token-func">len</span>(dag_bag.import_errors) == <span class="token-string">0</span>, (
+        f<span class="token-string">"Errores de importación: {dag_bag.import_errors}"</span>
+    )
+
+<span class="token-keyword">def</span> <span class="token-func">test_dag_has_tags</span>():
+    <span class="token-string">"""Todo DAG debe tener al menos un tag."""</span>
+    dag_bag = <span class="token-func">DagBag</span>(include_examples=<span class="token-string">False</span>)
+    <span class="token-keyword">for</span> dag_id, dag <span class="token-keyword">in</span> dag_bag.dags.<span class="token-func">items</span>():
+        <span class="token-keyword">assert</span> dag.tags, f<span class="token-string">"{dag_id} no tiene tags"</span>`} />
+    </CodeBlock>
+
+    <Callout type="warning" title="Idempotencia obligatoria">
+      Todo DAG debe ser <strong>idempotente</strong>: ejecutar el mismo
+      DAG run dos veces debe producir el mismo resultado. Usa
+      <code>logical_date</code> para particionar datos y evita side effects
+      no controlados.
+    </Callout>
+  </section>
+
+  <!-- PLACEHOLDER -->
+</article>

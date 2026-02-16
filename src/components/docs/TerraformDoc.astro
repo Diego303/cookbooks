@@ -1,0 +1,356 @@
+---
+import CodeBlock from '../CodeBlock.astro';
+import Callout from '../Callout.astro';
+import DocSection from '../DocSection.astro';
+import DocImage from '../DocImage.astro';
+import DocList from '../DocList.astro';
+---
+
+<article class="doc-article">
+  <h1 class="doc-article__title">Terraform IaC</h1>
+
+  <p class="doc-article__intro">
+    Guía de Infrastructure as Code con Terraform. Cubre desde los conceptos
+    fundamentales hasta patrones avanzados de módulos, workspaces, estado
+    remoto y pipelines de CI/CD para infraestructura.
+  </p>
+
+  <!-- Terraform Fundamentals -->
+  <section id="terraform-fundamentals">
+    <h2 class="doc-article__h2">Fundamentos</h2>
+    <p>
+      Terraform es una herramienta de <strong>Infrastructure as Code declarativa</strong>
+      que permite definir, planificar y aplicar cambios de infraestructura
+      de forma reproducible y versionable.
+    </p>
+
+    <CodeBlock lang="text">
+      <Fragment set:html={`<span class="token-comment">Flujo de trabajo Terraform</span>
+
+  <span class="token-func">Developer</span>                   <span class="token-func">Terraform</span>                    <span class="token-func">Cloud Provider</span>
+      │                           │                              │
+      │  terraform init           │                              │
+      ├──────────────────────────▶│  Descarga providers          │
+      │                           │  Inicializa backend          │
+      │                           │                              │
+      │  terraform plan            │                              │
+      ├──────────────────────────▶│  Compara estado vs config    │
+      │◀──────────────────────────┤  Muestra cambios             │
+      │  "Plan: 3 to add,         │                              │
+      │   1 to change, 0 destroy" │                              │
+      │                           │                              │
+      │  terraform apply           │                              │
+      ├──────────────────────────▶│  Ejecuta cambios             │
+      │                           ├─────────────────────────────▶│
+      │                           │          API calls           │
+      │                           │◀─────────────────────────────┤
+      │◀──────────────────────────┤  Actualiza state             │
+      │  "Apply complete!          │                              │
+      │   3 added, 1 changed"     │                              │
+
+<span class="token-comment">Archivos clave:</span>
+  <span class="token-string">main.tf</span>        → Recursos principales
+  <span class="token-string">variables.tf</span>   → Variables de input
+  <span class="token-string">outputs.tf</span>     → Valores de salida
+  <span class="token-string">providers.tf</span>   → Configuración de providers
+  <span class="token-string">terraform.tfvars</span> → Valores de variables (no commitear secrets)`} />
+    </CodeBlock>
+
+    <CodeBlock lang="hcl">
+      <Fragment set:html={`<span class="token-comment"># providers.tf — Configuración del provider</span>
+<span class="token-keyword">terraform</span> {
+  <span class="token-keyword">required_version</span> = <span class="token-string">">= 1.7"</span>
+
+  <span class="token-keyword">required_providers</span> {
+    <span class="token-keyword">aws</span> = {
+      source  = <span class="token-string">"hashicorp/aws"</span>
+      version = <span class="token-string">"~> 5.0"</span>
+    }
+  }
+
+  <span class="token-comment"># Estado remoto en S3</span>
+  <span class="token-keyword">backend</span> <span class="token-string">"s3"</span> {
+    bucket         = <span class="token-string">"my-terraform-state"</span>
+    key            = <span class="token-string">"production/terraform.tfstate"</span>
+    region         = <span class="token-string">"eu-west-1"</span>
+    encrypt        = <span class="token-string">true</span>
+    dynamodb_table = <span class="token-string">"terraform-locks"</span>
+  }
+}
+
+<span class="token-keyword">provider</span> <span class="token-string">"aws"</span> {
+  region = <span class="token-func">var</span>.aws_region
+
+  <span class="token-keyword">default_tags</span> {
+    tags = {
+      Environment = <span class="token-func">var</span>.environment
+      ManagedBy   = <span class="token-string">"terraform"</span>
+      Project     = <span class="token-func">var</span>.project_name
+    }
+  }
+}`} />
+    </CodeBlock>
+
+    <Callout type="info" title="State remoto obligatorio">
+      <strong>Nunca</strong> uses state local en equipos. El state contiene
+      información sensible y debe estar en un backend compartido (S3, GCS,
+      Terraform Cloud) con locking para evitar race conditions.
+    </Callout>
+  </section>
+
+  <!-- Resources & Data Sources -->
+  <section id="resources-data">
+    <h2 class="doc-article__h2">Resources & Data Sources</h2>
+    <p>
+      Los <strong>resources</strong> crean infraestructura real. Los
+      <strong>data sources</strong> leen infraestructura existente sin modificarla.
+    </p>
+
+    <CodeBlock lang="hcl">
+      <Fragment set:html={`<span class="token-comment"># main.tf — Infraestructura de una aplicación web</span>
+
+<span class="token-comment"># ── VPC ──</span>
+<span class="token-keyword">resource</span> <span class="token-string">"aws_vpc"</span> <span class="token-string">"main"</span> {
+  cidr_block           = <span class="token-string">"10.0.0.0/16"</span>
+  enable_dns_hostnames = <span class="token-string">true</span>
+
+  tags = { Name = <span class="token-string">"<span class="token-func">\${var.project_name}</span>-vpc"</span> }
+}
+
+<span class="token-comment"># ── Subnets (público + privado) ──</span>
+<span class="token-keyword">resource</span> <span class="token-string">"aws_subnet"</span> <span class="token-string">"public"</span> {
+  <span class="token-keyword">count</span>             = <span class="token-string">2</span>
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = <span class="token-string">"10.0.<span class="token-func">\${count.index}</span>.0/24"</span>
+  availability_zone = <span class="token-func">data</span>.aws_availability_zones.available.names[<span class="token-func">count</span>.index]
+
+  map_public_ip_on_launch = <span class="token-string">true</span>
+  tags = { Name = <span class="token-string">"public-<span class="token-func">\${count.index}</span>"</span> }
+}
+
+<span class="token-comment"># ── Security Group ──</span>
+<span class="token-keyword">resource</span> <span class="token-string">"aws_security_group"</span> <span class="token-string">"web"</span> {
+  name   = <span class="token-string">"web-sg"</span>
+  vpc_id = aws_vpc.main.id
+
+  <span class="token-keyword">ingress</span> {
+    from_port   = <span class="token-string">443</span>
+    to_port     = <span class="token-string">443</span>
+    protocol    = <span class="token-string">"tcp"</span>
+    cidr_blocks = [<span class="token-string">"0.0.0.0/0"</span>]
+  }
+
+  <span class="token-keyword">egress</span> {
+    from_port   = <span class="token-string">0</span>
+    to_port     = <span class="token-string">0</span>
+    protocol    = <span class="token-string">"-1"</span>
+    cidr_blocks = [<span class="token-string">"0.0.0.0/0"</span>]
+  }
+}
+
+<span class="token-comment"># ── Data source: leer zonas disponibles ──</span>
+<span class="token-keyword">data</span> <span class="token-string">"aws_availability_zones"</span> <span class="token-string">"available"</span> {
+  state = <span class="token-string">"available"</span>
+}
+
+<span class="token-comment"># ── Data source: AMI más reciente ──</span>
+<span class="token-keyword">data</span> <span class="token-string">"aws_ami"</span> <span class="token-string">"ubuntu"</span> {
+  most_recent = <span class="token-string">true</span>
+  owners      = [<span class="token-string">"099720109477"</span>]  <span class="token-comment"># Canonical</span>
+
+  <span class="token-keyword">filter</span> {
+    name   = <span class="token-string">"name"</span>
+    values = [<span class="token-string">"ubuntu/images/hvm-ssd/ubuntu-24.04-amd64-*"</span>]
+  }
+}`} />
+    </CodeBlock>
+  </section>
+
+  <!-- Modules -->
+  <section id="modules">
+    <h2 class="doc-article__h2">Módulos</h2>
+    <p>
+      Los módulos son <strong>paquetes reutilizables</strong> de configuración Terraform.
+      Encapsulan recursos relacionados con una interfaz de variables/outputs limpia.
+    </p>
+
+    <CodeBlock lang="hcl">
+      <Fragment set:html={`<span class="token-comment"># modules/ecs-service/main.tf — Módulo reutilizable</span>
+<span class="token-keyword">variable</span> <span class="token-string">"service_name"</span>  { type = <span class="token-keyword">string</span> }
+<span class="token-keyword">variable</span> <span class="token-string">"image"</span>         { type = <span class="token-keyword">string</span> }
+<span class="token-keyword">variable</span> <span class="token-string">"cpu"</span>           { type = <span class="token-keyword">number</span>; default = <span class="token-string">256</span> }
+<span class="token-keyword">variable</span> <span class="token-string">"memory"</span>        { type = <span class="token-keyword">number</span>; default = <span class="token-string">512</span> }
+<span class="token-keyword">variable</span> <span class="token-string">"desired_count"</span> { type = <span class="token-keyword">number</span>; default = <span class="token-string">2</span> }
+<span class="token-keyword">variable</span> <span class="token-string">"port"</span>          { type = <span class="token-keyword">number</span>; default = <span class="token-string">8080</span> }
+
+<span class="token-keyword">resource</span> <span class="token-string">"aws_ecs_task_definition"</span> <span class="token-string">"this"</span> {
+  family                   = <span class="token-func">var</span>.service_name
+  requires_compatibilities = [<span class="token-string">"FARGATE"</span>]
+  network_mode             = <span class="token-string">"awsvpc"</span>
+  cpu                      = <span class="token-func">var</span>.cpu
+  memory                   = <span class="token-func">var</span>.memory
+
+  <span class="token-keyword">container_definitions</span> = <span class="token-func">jsonencode</span>([{
+    name      = <span class="token-func">var</span>.service_name
+    image     = <span class="token-func">var</span>.image
+    essential = <span class="token-string">true</span>
+    portMappings = [{ containerPort = <span class="token-func">var</span>.port }]
+  }])
+}
+
+<span class="token-keyword">output</span> <span class="token-string">"task_definition_arn"</span> {
+  value = aws_ecs_task_definition.this.arn
+}
+
+<span class="token-comment"># ── Uso del módulo ──</span>
+<span class="token-comment"># root/main.tf</span>
+<span class="token-keyword">module</span> <span class="token-string">"backend"</span> {
+  source        = <span class="token-string">"./modules/ecs-service"</span>
+  service_name  = <span class="token-string">"backend-api"</span>
+  image         = <span class="token-string">"ghcr.io/org/backend:latest"</span>
+  cpu           = <span class="token-string">512</span>
+  memory        = <span class="token-string">1024</span>
+  desired_count = <span class="token-string">3</span>
+}
+
+<span class="token-keyword">module</span> <span class="token-string">"worker"</span> {
+  source       = <span class="token-string">"./modules/ecs-service"</span>
+  service_name = <span class="token-string">"worker"</span>
+  image        = <span class="token-string">"ghcr.io/org/worker:latest"</span>
+  cpu          = <span class="token-string">1024</span>
+  memory       = <span class="token-string">2048</span>
+}`} />
+    </CodeBlock>
+
+    <Callout type="tip" title="Terraform Registry">
+      Antes de crear un módulo propio, busca en el
+      <strong>Terraform Registry</strong> (registry.terraform.io). Hay módulos
+      verificados para VPC, EKS, RDS, y casi cualquier servicio de AWS/GCP/Azure.
+    </Callout>
+  </section>
+
+  <!-- Workspaces & Environments -->
+  <section id="workspaces-envs">
+    <h2 class="doc-article__h2">Workspaces & Environments</h2>
+    <p>
+      Los <strong>workspaces</strong> permiten gestionar múltiples entornos
+      (dev, staging, prod) con el mismo código Terraform usando variables
+      diferentes por entorno.
+    </p>
+
+    <CodeBlock lang="hcl">
+      <Fragment set:html={`<span class="token-comment"># variables.tf</span>
+<span class="token-keyword">variable</span> <span class="token-string">"environment"</span> {
+  type = <span class="token-keyword">string</span>
+  <span class="token-keyword">validation</span> {
+    condition     = <span class="token-func">contains</span>([<span class="token-string">"dev"</span>, <span class="token-string">"staging"</span>, <span class="token-string">"production"</span>], <span class="token-func">var</span>.environment)
+    error_message = <span class="token-string">"Environment must be dev, staging, or production."</span>
+  }
+}
+
+<span class="token-comment"># Configuración por entorno</span>
+<span class="token-keyword">locals</span> {
+  env_config = {
+    dev = {
+      instance_type = <span class="token-string">"t3.small"</span>
+      min_size      = <span class="token-string">1</span>
+      max_size      = <span class="token-string">2</span>
+      multi_az      = <span class="token-string">false</span>
+    }
+    staging = {
+      instance_type = <span class="token-string">"t3.medium"</span>
+      min_size      = <span class="token-string">2</span>
+      max_size      = <span class="token-string">4</span>
+      multi_az      = <span class="token-string">true</span>
+    }
+    production = {
+      instance_type = <span class="token-string">"m5.large"</span>
+      min_size      = <span class="token-string">3</span>
+      max_size      = <span class="token-string">10</span>
+      multi_az      = <span class="token-string">true</span>
+    }
+  }
+
+  config = <span class="token-keyword">local</span>.env_config[<span class="token-func">var</span>.environment]
+}`} />
+    </CodeBlock>
+
+    <CodeBlock lang="bash">
+      <Fragment set:html={`<span class="token-comment"># Gestión de workspaces</span>
+terraform workspace new dev
+terraform workspace new staging
+terraform workspace new production
+
+<span class="token-comment"># Seleccionar workspace</span>
+terraform workspace select staging
+
+<span class="token-comment"># Aplicar con variables de entorno</span>
+terraform apply -var-file=<span class="token-string">"envs/staging.tfvars"</span>`} />
+    </CodeBlock>
+  </section>
+
+  <!-- CI/CD for IaC -->
+  <section id="cicd-iac">
+    <h2 class="doc-article__h2">CI/CD para IaC</h2>
+    <p>
+      La infraestructura debe pasar por el mismo rigor de CI/CD que el código:
+      <strong>linting, plan en PR, apply automático en merge</strong>.
+    </p>
+
+    <CodeBlock lang="yaml">
+      <Fragment set:html={`<span class="token-comment"># .github/workflows/terraform.yml</span>
+<span class="token-keyword">name</span>: <span class="token-string">Terraform CI/CD</span>
+
+<span class="token-keyword">on</span>:
+  <span class="token-keyword">pull_request</span>:
+    <span class="token-keyword">paths</span>: [<span class="token-string">'infra/**'</span>]
+  <span class="token-keyword">push</span>:
+    <span class="token-keyword">branches</span>: [<span class="token-string">main</span>]
+    <span class="token-keyword">paths</span>: [<span class="token-string">'infra/**'</span>]
+
+<span class="token-keyword">jobs</span>:
+  <span class="token-keyword">plan</span>:
+    <span class="token-keyword">runs-on</span>: <span class="token-string">ubuntu-latest</span>
+    <span class="token-keyword">if</span>: <span class="token-string">github.event_name == 'pull_request'</span>
+    <span class="token-keyword">steps</span>:
+      - <span class="token-keyword">uses</span>: <span class="token-string">actions/checkout@v4</span>
+
+      - <span class="token-keyword">name</span>: <span class="token-string">Setup Terraform</span>
+        <span class="token-keyword">uses</span>: <span class="token-string">hashicorp/setup-terraform@v3</span>
+        <span class="token-keyword">with</span>:
+          <span class="token-keyword">terraform_version</span>: <span class="token-string">"1.7.0"</span>
+
+      - <span class="token-keyword">name</span>: <span class="token-string">Terraform Init</span>
+        <span class="token-keyword">run</span>: <span class="token-string">terraform init -backend=false</span>
+        <span class="token-keyword">working-directory</span>: <span class="token-string">infra/</span>
+
+      - <span class="token-keyword">name</span>: <span class="token-string">Terraform Format Check</span>
+        <span class="token-keyword">run</span>: <span class="token-string">terraform fmt -check -recursive</span>
+
+      - <span class="token-keyword">name</span>: <span class="token-string">Terraform Validate</span>
+        <span class="token-keyword">run</span>: <span class="token-string">terraform validate</span>
+
+      - <span class="token-keyword">name</span>: <span class="token-string">Terraform Plan</span>
+        <span class="token-keyword">run</span>: <span class="token-string">terraform plan -var-file=envs/staging.tfvars -no-color</span>
+        <span class="token-keyword">working-directory</span>: <span class="token-string">infra/</span>
+
+  <span class="token-keyword">apply</span>:
+    <span class="token-keyword">runs-on</span>: <span class="token-string">ubuntu-latest</span>
+    <span class="token-keyword">if</span>: <span class="token-string">github.ref == 'refs/heads/main' && github.event_name == 'push'</span>
+    <span class="token-keyword">environment</span>: <span class="token-string">production</span>   <span class="token-comment"># Requiere aprobación manual</span>
+    <span class="token-keyword">steps</span>:
+      - <span class="token-keyword">uses</span>: <span class="token-string">actions/checkout@v4</span>
+      - <span class="token-keyword">uses</span>: <span class="token-string">hashicorp/setup-terraform@v3</span>
+      - <span class="token-keyword">run</span>: <span class="token-string">terraform init</span>
+      - <span class="token-keyword">run</span>: <span class="token-string">terraform apply -auto-approve -var-file=envs/production.tfvars</span>`} />
+    </CodeBlock>
+
+    <Callout type="warning" title="Nunca auto-approve en producción sin protección">
+      Configura <strong>GitHub Environment protection rules</strong> para
+      que el apply en producción requiera aprobación manual de al menos
+      un reviewer antes de ejecutarse.
+    </Callout>
+  </section>
+
+  <!-- PLACEHOLDER -->
+</article>

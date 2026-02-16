@@ -14,6 +14,7 @@ import Nav from '../components/Nav.astro';
 import Hero from '../components/Hero.astro';
 import Library from '../components/Library.astro';
 import DocViewer from '../components/DocViewer.astro';
+import Canvas from '../components/Canvas.astro';
 import Footer from '../components/Footer.astro';
 import { topics } from '../data/topics';
 ---
@@ -30,6 +31,9 @@ import { topics } from '../data/topics';
 
   <!-- Doc viewer (hidden by default, shown as full page) -->
   <DocViewer />
+
+  <!-- Canvas / Whiteboard (hidden by default) -->
+  <Canvas />
 
   <!-- Topic metadata for client-side JS -->
   <script
@@ -55,6 +59,7 @@ import { topics } from '../data/topics';
   // --- DOM References ---
   const landingSections = document.getElementById('landing-sections');
   const docViewer       = document.getElementById('doc-viewer');
+  const canvasSection   = document.getElementById('canvas-section');
   const navLanding      = document.getElementById('nav-landing');
   const navDoc          = document.getElementById('nav-doc');
   const navBreadcrumb   = document.getElementById('nav-breadcrumb');
@@ -64,6 +69,8 @@ import { topics } from '../data/topics';
   const docBreadcrumbs  = document.getElementById('doc-breadcrumbs');
   const docBackSidebar  = document.getElementById('doc-back-sidebar');
   const docBackBottom   = document.getElementById('doc-back-bottom');
+  const canvasBack      = document.getElementById('canvas-back');
+  const canvasIframe    = document.getElementById('canvas-iframe');
 
   // Mobile TOC elements
   const mobileTocBtn     = document.getElementById('doc-mobile-toc-btn');
@@ -82,8 +89,9 @@ import { topics } from '../data/topics';
     const topic = topicsMeta.find(t => t.id === topicId);
     if (!topic) return;
 
-    // 1. Hide landing, show doc viewer
+    // 1. Hide landing & canvas, show doc viewer
     landingSections.style.display = 'none';
+    canvasSection.style.display = 'none';
     docViewer.style.display = '';
 
     // 2. Switch nav to doc mode
@@ -167,6 +175,44 @@ import { topics } from '../data/topics';
     closeMobileToc();
 
     // 7. Re-init icons
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+
+  // --- Enter Canvas Mode ---
+  function openCanvas() {
+    landingSections.style.display = 'none';
+    docViewer.style.display = 'none';
+    canvasSection.style.display = '';
+
+    navLanding.classList.add('hidden');
+    navDoc.classList.remove('active');
+    if (navToggle) navToggle.classList.add('hidden');
+
+    // Close mobile menu if open
+    const mobileMenu = document.getElementById('nav-mobile');
+    if (mobileMenu) mobileMenu.classList.add('hidden');
+
+    // Cleanup doc observer
+    if (currentObserver) { currentObserver.disconnect(); currentObserver = null; }
+
+    window.scrollTo(0, 0);
+    history.pushState({ canvas: true }, '', '#canvas');
+
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+
+  // --- Exit Canvas Mode ---
+  function closeCanvas() {
+    canvasSection.style.display = 'none';
+    landingSections.style.display = '';
+    docViewer.style.display = 'none';
+
+    navLanding.classList.remove('hidden');
+    navDoc.classList.remove('active');
+    if (navToggle) navToggle.classList.remove('hidden');
+
+    history.pushState(null, '', window.location.pathname);
+
     if (typeof lucide !== 'undefined') lucide.createIcons();
   }
 
@@ -262,23 +308,31 @@ import { topics } from '../data/topics';
   navBack?.addEventListener('click', closeDoc);
   docBackSidebar?.addEventListener('click', closeDoc);
   docBackBottom?.addEventListener('click', closeDoc);
+  canvasBack?.addEventListener('click', closeCanvas);
 
   // --- Event: Logo click returns to landing ---
   navLogo?.addEventListener('click', (e) => {
-    if (docViewer.style.display !== 'none') {
+    if (docViewer.style.display !== 'none' || canvasSection.style.display !== 'none') {
       e.preventDefault();
-      closeDoc();
+      if (canvasSection.style.display !== 'none') {
+        closeCanvas();
+      } else {
+        closeDoc();
+      }
     }
   });
 
   // --- Event: Browser back/forward ---
   window.addEventListener('popstate', (e) => {
-    if (e.state?.topicId) {
+    if (e.state?.canvas) {
+      openCanvas();
+    } else if (e.state?.topicId) {
       openDoc(e.state.topicId);
-    } else if (docViewer.style.display !== 'none') {
-      // Going back from doc to landing
+    } else {
+      // Going back to landing
       landingSections.style.display = '';
       docViewer.style.display = 'none';
+      canvasSection.style.display = 'none';
       navLanding.classList.remove('hidden');
       navDoc.classList.remove('active');
       if (navToggle) navToggle.classList.remove('hidden');
@@ -290,11 +344,13 @@ import { topics } from '../data/topics';
   // --- Event: Handle initial hash on page load ---
   function handleInitialHash() {
     const hash = window.location.hash;
-    if (hash.startsWith('#doc/')) {
+    if (hash === '#canvas') {
+      openCanvas();
+      history.replaceState({ canvas: true }, '', '#canvas');
+    } else if (hash.startsWith('#doc/')) {
       const topicId = hash.replace('#doc/', '');
       const topic = topicsMeta.find(t => t.id === topicId);
       if (topic) {
-        // Replace state instead of push to avoid double history entry
         openDoc(topicId);
         history.replaceState({ topicId }, '', hash);
       }
@@ -338,5 +394,18 @@ import { topics } from '../data/topics';
       }
     }
   });
+
+  // --- Event: Nav links for Canvas (#canvas) ---
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('a[href="#canvas"]');
+    if (!link) return;
+    e.preventDefault();
+    openCanvas();
+  });
+
+  // --- Preload whiteboard iframe in background ---
+  if (canvasIframe) {
+    canvasIframe.src = '/whiteboard';
+  }
 })();
 </script>
