@@ -19,6 +19,8 @@ import DesignDoc from './docs/DesignDoc.astro';
 // DEVOPS
 import ContainersK8sDoc from './docs/ContainersK8sDoc.astro';
 import CICDDoc from './docs/CICDDoc.astro';
+import TerraformDoc from './docs/TerraformDoc.astro';
+import AirflowDoc from './docs/AirflowDoc.astro';
 // FRONTEND
 import ReactDoc from './docs/ReactDoc.astro';
 import AstroDoc from './docs/AstroDoc.astro';
@@ -32,6 +34,8 @@ import AgentContainersDoc from './docs/AgentContainersDoc.astro';
 import LangChainDoc from './docs/LangChainDoc.astro';
 import GoogleA2ADoc from './docs/GoogleA2ADoc.astro';
 import MCPDoc from './docs/MCPDoc.astro';
+import PromptEngineeringDoc from './docs/PromptEngineeringDoc.astro';
+import CrewAIDoc from './docs/CrewAIDoc.astro';
 
 const docComponents: Record<string, any> = {
   'fastapi-rest': FastAPIDoc,
@@ -39,6 +43,8 @@ const docComponents: Record<string, any> = {
   'design-system': DesignDoc,
   'containers-k8s': ContainersK8sDoc,
   'cicd-pipeline': CICDDoc,
+  'terraform-iac': TerraformDoc,
+  'apache-airflow': AirflowDoc,
   'react-patterns': ReactDoc,
   'astro-guide': AstroDoc,
   'python-backend': PythonBackendDoc,
@@ -48,6 +54,8 @@ const docComponents: Record<string, any> = {
   'langchain-agents': LangChainDoc,
   'google-a2a': GoogleA2ADoc,
   'mcp-python': MCPDoc,
+  'prompt-engineering': PromptEngineeringDoc,
+  'crewai-multiagent': CrewAIDoc,
 };
 ---
 
