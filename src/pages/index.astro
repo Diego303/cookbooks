@@ -405,7 +405,10 @@ import { topics } from '../data/topics';
 
   // --- Preload whiteboard iframe in background ---
   if (canvasIframe) {
-    canvasIframe.src = '/whiteboard';
+    // Use import.meta.env.BASE_URL to respect the 'base' config (e.g. /cookbooks/)
+    // BASE_URL matches the config 'base' value (including trailing slash if present)
+    const baseUrl = import.meta.env.BASE_URL;
+    canvasIframe.src = `${baseUrl}whiteboard`;
   }
 })();
 </script>
