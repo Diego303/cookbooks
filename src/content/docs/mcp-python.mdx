@@ -1,0 +1,682 @@
+---
+title: "MCP Python SDK"
+description: "Model Context Protocol (MCP): creación de servidores y clientes con el SDK oficial de Python."
+intro: "Guía completa del Model Context Protocol (MCP) y su SDK de Python. Cubre la creación de servidores MCP con resources, tools y prompts, el transporte STDIO/SSE, y la integración con agentes LLM."
+category: "AGENTIC AI"
+categoryColor: "red"
+icon: "plug"
+tags: ["MCP", "SDK", "Python"]
+breadcrumb: ["Docs", "Agentic AI", "MCP Python"]
+order: 16
+toc:
+  - { id: "mcp-overview", label: "Protocol Overview" }
+  - { id: "creating-server", label: "Creating a Server" }
+  - { id: "transport", label: "Transport" }
+  - { id: "client-integration", label: "Client Integration" }
+  - { id: "advanced-patterns", label: "Advanced Patterns" }
+  - { id: "multi-server", label: "Multi-Server Composition" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="mcp-overview">
+<h2 class="doc-article__h2" id="mcp-overview">MCP Overview</h2>
+
+El **Model Context Protocol** (MCP) es un estándar abierto creado por Anthropic para conectar LLMs con fuentes de datos y herramientas externas. Funciona como un "USB-C para AI": una interfaz universal.
+
+```text
+Arquitectura MCP
+
+┌──────────────────────────────────────────────────────────┐
+│                     MCP Host                             │
+│              (Claude, IDE, Agent)                         │
+│                                                          │
+│  ┌─────────────────────┐                                 │
+│  │    MCP Client        │                                 │
+│  │  (inside the host)  │                                 │
+│  └─────────┬───────────┘                                 │
+└────────────┼─────────────────────────────────────────────┘
+             │ MCP Protocol (JSON-RPC)
+             │
+     ┌───────▼───────┐  ┌───────────────┐  ┌──────────────┐
+     │ MCP Server    │  │ MCP Server    │  │ MCP Server   │
+     │ Database      │  │ GitHub API    │  │ File System  │
+     │               │  │               │  │              │
+     │ • Resources   │  │ • Tools       │  │ • Resources  │
+     │ • Tools       │  │ • Resources   │  │ • Tools      │
+     └───────────────┘  └───────────────┘  └──────────────┘
+```
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Primitiva</th><th>Control</th><th>Descripción</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>**Resources**</td><td>Application</td><td>Datos que el host puede leer (archivos, DB rows, APIs)</td></tr>
+      <tr><td>**Tools**</td><td>Model (LLM)</td><td>Funciones que el LLM puede invocar (queries, acciones)</td></tr>
+      <tr><td>**Prompts**</td><td>User</td><td>Templates de prompts pre-definidos con argumentos</td></tr>
+    </tbody>
+  </table>
+</div>
+
+```bash
+# Instalar el SDK de Python
+pip install mcp
+
+# O con extras para development
+pip install "mcp[cli]"
+```
+</section>
+
+<section id="creating-server">
+<h2 class="doc-article__h2" id="creating-server">Creating an MCP Server</h2>
+
+Un servidor MCP expone resources, tools y prompts. El SDK de Python proporciona decoradores para registrar cada primitiva de forma declarativa.
+
+```python
+# server.py — Servidor MCP básico
+from mcp.server.fastmcp import FastMCP
+
+# Crear servidor
+mcp = FastMCP("My DB Server")
+
+# ══════════════════════════════════════
+# Resources — datos que el host puede leer
+# ══════════════════════════════════════
+
+@mcp.resource("config://app")
+def get_config() -> str:
+    """Configuración actual de la aplicación."""
+    return json.dumps({
+        "version": "1.0.0",
+        "env": "production",
+        "features": ["auth", "cache"],
+    })
+
+@mcp.resource("db://users/{user_id}")
+def get_user(user_id: str) -> str:
+    """Obtener datos de un usuario por ID."""
+    user = db.query(User).get(user_id)
+    return json.dumps(user.to_dict())
+
+# ══════════════════════════════════════
+# Tools — funciones que el LLM puede invocar
+# ══════════════════════════════════════
+
+@mcp.tool()
+def query_database(sql: str) -> str:
+    """Ejecuta una consulta SQL de solo lectura en la base de datos.
+
+    Args:
+        sql: Consulta SQL SELECT a ejecutar.
+    """
+    if not sql.strip().upper().startswith("SELECT"):
+        raise ValueError("Solo se permiten consultas SELECT")
+    result = db.execute(sql)
+    return json.dumps(result.fetchall())
+
+@mcp.tool()
+def create_ticket(title: str, description: str, priority: str = "medium") -> str:
+    """Crea un ticket de soporte en el sistema.
+
+    Args:
+        title: Título del ticket.
+        description: Descripción detallada del problema.
+        priority: Prioridad (low, medium, high, critical).
+    """
+    ticket = tickets.create(title=title, desc=description, priority=priority)
+    return f"Ticket {ticket.id} creado exitosamente"
+
+# ══════════════════════════════════════
+# Prompts — templates pre-definidos
+# ══════════════════════════════════════
+
+@mcp.prompt()
+def analyze_table(table_name: str) -> str:
+    """Genera un prompt para analizar una tabla de la DB."""
+    schema = db.get_schema(table_name)
+    return f"""Analiza la siguiente tabla de base de datos:
+
+Tabla: {table_name}
+Schema: {schema}
+
+Genera un informe con:
+1. Descripción de cada columna
+2. Posibles indices a optimizar
+3. Sugerencias de normalización"""
+```
+</section>
+
+<section id="transport">
+<h2 class="doc-article__h2" id="transport">Transport: STDIO & SSE</h2>
+
+MCP soporta dos transportes: **STDIO** (para procesos locales) y **SSE** (Server-Sent Events, para servidores remotos).
+
+```python
+# ── STDIO Transport (desarrollo y herramientas locales) ──
+# Iniciar con: python server.py
+
+if __name__ == "__main__":
+    mcp.run()  # STDIO por defecto
+
+# ── SSE Transport (servidores remotos) ──
+# Iniciar con: python server.py --transport sse
+
+if __name__ == "__main__":
+    mcp.run(transport="sse")  # Inicia servidor HTTP con SSE
+```
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Transporte</th><th>Protocolo</th><th>Caso de uso</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>**STDIO**</td><td>stdin/stdout</td><td>Herramientas locales, integración con IDEs</td></tr>
+      <tr><td>**SSE**</td><td>HTTP + SSE</td><td>Servidores remotos, cloud deployments</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<Callout type="tip" title="Testing con MCP Inspector">
+  Usa `mcp dev server.py` para abrir el **MCP Inspector**,
+  una interfaz web donde puedes probar tus resources, tools y prompts interactivamente
+  antes de integrar con un host real.
+</Callout>
+</section>
+
+<section id="client-integration">
+<h2 class="doc-article__h2" id="client-integration">Client Integration</h2>
+
+Un MCP client se conecta a uno o más servidores MCP y expone sus tools al LLM. Esto permite agentic workflows donde el LLM usa tools de múltiples fuentes.
+
+```python
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+import asyncio
+
+async def main():
+    # Conectar a servidor MCP via STDIO
+    server_params = StdioServerParameters(
+        command="python",
+        args=["server.py"],
+    )
+
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            # Inicializar conexión
+            await session.initialize()
+
+            # Listar tools disponibles
+            tools = await session.list_tools()
+            for tool in tools.tools:
+                print(f"Tool: {tool.name} — {tool.description}")
+
+            # Invocar una tool
+            result = await session.call_tool(
+                "query_database",
+                arguments={"sql": "SELECT COUNT(*) FROM users"},
+            )
+            print(f"Result: {result.content}")
+
+            # Listar resources
+            resources = await session.list_resources()
+            for res in resources.resources:
+                print(f"Resource: {res.uri}")
+
+asyncio.run(main())
+```
+</section>
+
+<section id="advanced-patterns">
+<h2 class="doc-article__h2" id="advanced-patterns">Advanced Patterns</h2>
+
+Patrones avanzados para servidores MCP de producción: contexto compartido, manejo de errores y composición de servidores.
+
+### Context y lifespan
+
+```python
+from contextlib import asynccontextmanager
+from mcp.server.fastmcp import FastMCP, Context
+
+# ── Lifespan: inicializar recursos al iniciar ──
+@asynccontextmanager
+async def lifespan(server: FastMCP):
+    # Inicializar conexión de DB al arrancar
+    db = await create_db_pool()
+    try:
+        yield {"db": db}
+    finally:
+        await db.close()
+
+mcp = FastMCP("Production Server", lifespan=lifespan)
+
+# ── Acceder al contexto en tools ──
+@mcp.tool()
+async def query_users(ctx: Context, department: str) -> str:
+    """Query users by department."""
+    db = ctx.request_context.lifespan_context["db"]
+    rows = await db.fetch(
+        "SELECT * FROM users WHERE department = $1",
+        department,
+    )
+
+    # Reportar progreso
+    await ctx.report_progress(1, 1)
+
+    return json.dumps([dict(r) for r in rows])
+```
+
+<Callout type="info" title="MCP en IDEs">
+  MCP está integrado nativamente en **Claude Desktop**, **VS Code**
+  (via Copilot), **Cursor** y otros IDEs. Tu servidor MCP funciona automáticamente
+  como una extensión de las capacidades del LLM del IDE.
+</Callout>
+</section>
+
+<section id="multi-server">
+<h2 class="doc-article__h2" id="multi-server">Multi-Server Composition</h2>
+
+En proyectos reales, un agente necesita conectarse a **múltiples servidores MCP** simultáneamente: uno para la base de datos, otro para GitHub, otro para el sistema de tickets, etc. Gestionar estas conexiones requiere namespacing de tools, monitoreo de salud y configuración centralizada.
+
+```text
+Composición multi-servidor MCP
+
+┌──────────────────────────────────────────────────────────┐
+│                    MCP Host / Agent                       │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │            Multi-Server MCP Client                  │  │
+│  │                                                    │  │
+│  │  Tools disponibles (con namespace):                │  │
+│  │  • db.query_database     • github.create_pr       │  │
+│  │  • db.create_ticket      • github.list_issues     │  │
+│  │  • slack.send_message    • jira.create_issue      │  │
+│  └────┬───────────────┬──────────────┬───────────────┘  │
+└───────┼───────────────┼──────────────┼───────────────────┘
+        │               │              │
+  ┌─────▼──────┐  ┌─────▼──────┐  ┌───▼────────┐
+  │ DB Server  │  │ GitHub     │  │ Slack      │
+  │ (STDIO)    │  │ Server     │  │ Server     │
+  │            │  │ (STDIO)    │  │ (SSE)      │
+  └────────────┘  └────────────┘  └────────────┘
+```
+
+### Cliente multi-servidor con namespacing
+
+El principal reto de conectar múltiples servidores es evitar **colisiones de nombres de tools**. Si dos servidores exponen una tool llamada `search`, el LLM no sabrá cuál usar. La solución es prefijar cada tool con el nombre del servidor.
+
+```python
+# multi_server_client.py
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from dataclasses import dataclass, field
+import asyncio
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class ServerConfig:
+    """Configuración de un servidor MCP."""
+    name: str                          # Nombre para namespacing (ej: "db", "github")
+    command: str                       # Comando para iniciar el servidor
+    args: list[str] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)
+
+@dataclass
+class ConnectedServer:
+    """Servidor MCP conectado con su sesión activa."""
+    config: ServerConfig
+    session: ClientSession
+    tools: list = field(default_factory=list)
+    healthy: bool = True
+
+class MultiServerMCPClient:
+    """Cliente que gestiona múltiples servidores MCP con namespacing."""
+
+    def __init__(self):
+        self.servers: dict[str, ConnectedServer] = {}
+        self._contexts = []  # Para cleanup
+
+    async def connect_server(self, config: ServerConfig):
+        """Conectar a un servidor MCP y registrar sus tools."""
+        params = StdioServerParameters(
+            command=config.command,
+            args=config.args,
+            env=config.env or None,
+        )
+
+        # Mantener contextos para que la conexión no se cierre
+        stdio_ctx = stdio_client(params)
+        read, write = await stdio_ctx.__aenter__()
+        self._contexts.append(stdio_ctx)
+
+        session_ctx = ClientSession(read, write)
+        session = await session_ctx.__aenter__()
+        self._contexts.append(session_ctx)
+
+        await session.initialize()
+
+        # Obtener tools y aplicar namespace
+        tools_result = await session.list_tools()
+        namespaced_tools = []
+        for tool in tools_result.tools:
+            namespaced_tools.append({
+                "original_name": tool.name,
+                "namespaced_name": f"{config.name}.{tool.name}",
+                "description": f"[{config.name}] {tool.description}",
+                "schema": tool.inputSchema,
+            })
+
+        server = ConnectedServer(
+            config=config,
+            session=session,
+            tools=namespaced_tools,
+        )
+        self.servers[config.name] = server
+        logger.info(
+            f"Conectado a '{config.name}' — "
+            f"{len(namespaced_tools)} tools disponibles"
+        )
+
+    async def connect_all(self, configs: list[ServerConfig]):
+        """Conectar a todos los servidores en paralelo."""
+        tasks = [self.connect_server(cfg) for cfg in configs]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for cfg, result in zip(configs, results):
+            if isinstance(result, Exception):
+                logger.error(f"Error conectando a '{cfg.name}': {result}")
+
+    def list_all_tools(self) -> list[dict]:
+        """Listar todas las tools de todos los servidores (con namespace)."""
+        all_tools = []
+        for server in self.servers.values():
+            if server.healthy:
+                all_tools.extend(server.tools)
+        return all_tools
+
+    async def call_tool(self, namespaced_name: str, arguments: dict) -> str:
+        """Llamar a una tool usando su nombre con namespace."""
+        # Parsear namespace: "db.query_database" → server="db", tool="query_database"
+        parts = namespaced_name.split(".", 1)
+        if len(parts) != 2:
+            raise ValueError(
+                f"Nombre de tool inválido: '{namespaced_name}'. "
+                f"Usa formato 'servidor.tool_name'"
+            )
+
+        server_name, tool_name = parts
+        server = self.servers.get(server_name)
+        if not server:
+            raise ValueError(f"Servidor '{server_name}' no encontrado")
+        if not server.healthy:
+            raise RuntimeError(f"Servidor '{server_name}' no está saludable")
+
+        result = await server.session.call_tool(tool_name, arguments)
+        return result.content
+
+    async def check_health(self) -> dict[str, bool]:
+        """Verificar salud de todos los servidores conectados."""
+        health = {}
+        for name, server in self.servers.items():
+            try:
+                # Ping simple: listar tools para verificar conexión
+                await asyncio.wait_for(
+                    server.session.list_tools(),
+                    timeout=5.0,
+                )
+                server.healthy = True
+            except Exception:
+                server.healthy = False
+                logger.warning(f"Servidor '{name}' no responde")
+            health[name] = server.healthy
+        return health
+
+    async def close(self):
+        """Cerrar todas las conexiones."""
+        for ctx in reversed(self._contexts):
+            try:
+                await ctx.__aexit__(None, None, None)
+            except Exception:
+                pass
+
+# ── Uso del cliente multi-servidor ──
+async def main():
+    client = MultiServerMCPClient()
+
+    # Configurar servidores
+    servers = [
+        ServerConfig(
+            name="db",
+            command="python",
+            args=["servers/db_server.py"],
+            env={"DATABASE_URL": "postgresql://localhost/mydb"},
+        ),
+        ServerConfig(
+            name="github",
+            command="python",
+            args=["servers/github_server.py"],
+            env={"GITHUB_TOKEN": "ghp_xxxxx"},
+        ),
+        ServerConfig(
+            name="slack",
+            command="python",
+            args=["servers/slack_server.py"],
+            env={"SLACK_TOKEN": "xoxb-xxxxx"},
+        ),
+    ]
+
+    try:
+        await client.connect_all(servers)
+
+        # Ver todas las tools disponibles
+        for tool in client.list_all_tools():
+            print(f"  {tool['namespaced_name']}: {tool['description']}")
+
+        # Llamar tools de diferentes servidores
+        db_result = await client.call_tool(
+            "db.query_database",
+            {"sql": "SELECT COUNT(*) FROM users"},
+        )
+        print(f"DB: {db_result}")
+
+        gh_result = await client.call_tool(
+            "github.list_issues",
+            {"repo": "myorg/myrepo", "state": "open"},
+        )
+        print(f"GitHub: {gh_result}")
+
+        # Health check
+        health = await client.check_health()
+        print(f"Health: {health}")
+
+    finally:
+        await client.close()
+
+asyncio.run(main())
+```
+
+### Configuración via archivo JSON
+
+Para facilitar la gestión de múltiples servidores, usa un archivo de configuración JSON. Este mismo formato es compatible con **Claude Desktop** y otros hosts MCP.
+
+```json
+{
+  "mcpServers": {
+    "database": {
+      "command": "python",
+      "args": ["servers/db_server.py"],
+      "env": {
+        "DATABASE_URL": "postgresql://user:pass@localhost:5432/mydb"
+      }
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/projects"],
+      "env": {}
+    },
+    "slack": {
+      "command": "python",
+      "args": ["servers/slack_server.py"],
+      "env": {
+        "SLACK_BOT_TOKEN": "${SLACK_TOKEN}",
+        "SLACK_TEAM_ID": "T01234567"
+      }
+    },
+    "jira": {
+      "command": "python",
+      "args": ["servers/jira_server.py"],
+      "env": {
+        "JIRA_URL": "https://mycompany.atlassian.net",
+        "JIRA_TOKEN": "${JIRA_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+### Cargador de configuración
+
+```python
+# config_loader.py
+import json
+import os
+from pathlib import Path
+
+def load_mcp_config(config_path: str = "mcp_servers.json") -> list[ServerConfig]:
+    """Cargar configuración de servidores MCP desde archivo JSON."""
+    path = Path(config_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Archivo de configuración no encontrado: {config_path}")
+
+    with open(path) as f:
+        raw = json.load(f)
+
+    configs = []
+    for name, server_cfg in raw.get("mcpServers", {}).items():
+        # Resolver variables de entorno en env values
+        resolved_env = {}
+        for key, value in server_cfg.get("env", {}).items():
+            if value.startswith("${") and value.endswith("}"):
+                env_var = value[2:-1]
+                resolved_env[key] = os.environ.get(env_var, "")
+            else:
+                resolved_env[key] = value
+
+        configs.append(ServerConfig(
+            name=name,
+            command=server_cfg["command"],
+            args=server_cfg.get("args", []),
+            env=resolved_env,
+        ))
+
+    return configs
+
+# ── Uso con el cliente multi-servidor ──
+async def main_from_config():
+    client = MultiServerMCPClient()
+    configs = load_mcp_config("mcp_servers.json")
+
+    await client.connect_all(configs)
+    print(f"Conectado a {len(client.servers)} servidores MCP")
+
+    # Health check periódico
+    health = await client.check_health()
+    for server, is_healthy in health.items():
+        status = "OK" if is_healthy else "DOWN"
+        print(f"  [{status}] {server}")
+```
+
+### Monitoreo de salud con reconexión automática
+
+```python
+# health_monitor.py
+import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
+
+class MCPHealthMonitor:
+    """Monitor que verifica la salud de servidores MCP y reconecta si es necesario."""
+
+    def __init__(self, client: MultiServerMCPClient, check_interval: float = 30.0):
+        self.client = client
+        self.check_interval = check_interval
+        self._running = False
+
+    async def start(self):
+        """Iniciar monitoreo en background."""
+        self._running = True
+        while self._running:
+            health = await self.client.check_health()
+
+            for server_name, is_healthy in health.items():
+                if not is_healthy:
+                    logger.warning(f"Servidor '{server_name}' caído — intentando reconectar")
+                    try:
+                        config = self.client.servers[server_name].config
+                        await self.client.connect_server(config)
+                        logger.info(f"Servidor '{server_name}' reconectado exitosamente")
+                    except Exception as e:
+                        logger.error(f"Reconexión de '{server_name}' falló: {e}")
+
+            await asyncio.sleep(self.check_interval)
+
+    def stop(self):
+        self._running = False
+
+# ── Integrar monitoreo con el cliente ──
+async def main_with_monitoring():
+    client = MultiServerMCPClient()
+    configs = load_mcp_config("mcp_servers.json")
+    await client.connect_all(configs)
+
+    # Iniciar health monitor en background
+    monitor = MCPHealthMonitor(client, check_interval=30.0)
+    monitor_task = asyncio.create_task(monitor.start())
+
+    try:
+        # Tu lógica de agente aquí...
+        tools = client.list_all_tools()
+        print(f"{len(tools)} tools disponibles de {len(client.servers)} servidores")
+
+        # El monitor sigue corriendo en background
+        await asyncio.sleep(3600)  # Mantener vivo
+    finally:
+        monitor.stop()
+        await client.close()
+```
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Patrón</th><th>Problema que resuelve</th><th>Implementación</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>**Namespacing**</td><td>Colisión de nombres de tools entre servidores</td><td>Prefijar con `servidor.tool_name`</td></tr>
+      <tr><td>**Health monitoring**</td><td>Servidores que caen sin aviso</td><td>Ping periódico + reconexión automática</td></tr>
+      <tr><td>**Config file**</td><td>Hardcodear servidores en el código</td><td>JSON compatible con Claude Desktop</td></tr>
+      <tr><td>**Env resolution**</td><td>Secrets en archivos de configuración</td><td>Variables `${VAR}` resueltas desde entorno</td></tr>
+      <tr><td>**Parallel connect**</td><td>Lentitud al conectar muchos servidores</td><td>`asyncio.gather` para conexiones concurrentes</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<Callout type="tip" title="Compatibilidad con Claude Desktop">
+  El formato JSON de configuración es **idéntico** al que usa Claude Desktop en
+  `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
+  `%APPDATA%\Claude\claude_desktop_config.json` (Windows). Si tu agente usa el mismo
+  formato, los desarrolladores pueden reutilizar su configuración existente sin cambios.
+</Callout>
+</section>

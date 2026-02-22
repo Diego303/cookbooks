@@ -1,0 +1,623 @@
+---
+title: "Agents in Containers"
+description: "Arquitectura de agentes IA en contenedores Docker con orquestación y escalado automático."
+intro: "Guía para containerizar agentes de IA autónomos. Cubre la arquitectura de un agente como microservicio, comunicación via mensajería, persistencia de estado, health checks y escalado horizontal en Kubernetes."
+category: "AGENTIC AI"
+categoryColor: "red"
+icon: "boxes"
+tags: ["Docker", "Agents", "Scale"]
+breadcrumb: ["Docs", "Agentic AI", "Agents in Containers"]
+order: 13
+toc:
+  - { id: "agent-architecture", label: "Agent Architecture" }
+  - { id: "containerizing-agent", label: "Containerizing an Agent" }
+  - { id: "message-driven", label: "Message-driven Communication" }
+  - { id: "k8s-deployment", label: "K8s Deployment" }
+  - { id: "observability", label: "Observability" }
+  - { id: "multi-agent-orchestration", label: "Multi-Agent Orchestration" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="agent-architecture">
+<h2 class="doc-article__h2" id="agent-architecture">Agent Architecture</h2>
+
+Un agente de IA en producción es un **microservicio** que recibe tareas, razona, ejecuta tools y devuelve resultados. Al containerizarlo, lo tratamos como cualquier otro servicio: desplegable, escalable y observable.
+
+```text
+Arquitectura de un agente containerizado
+
+┌──────────────────────────────────────────────────────────┐
+│                    Agent Container                        │
+│                                                          │
+│  ┌────────────────┐  ┌──────────────┐  ┌─────────────┐  │
+│  │  Agent Core    │  │ Tool Registry│  │ Memory/State│  │
+│  │  (reasoning)   │  │              │  │             │  │
+│  │  LLM calls     │  │  - Search    │  │  - Redis    │  │
+│  │  Planning      │  │  - SQL Query │  │  - SQLite   │  │
+│  │  Execution     │  │  - API Call  │  │  - Files    │  │
+│  └───────┬────────┘  └──────┬───────┘  └──────┬──────┘  │
+│          │                  │                  │         │
+│  ┌───────▼──────────────────▼──────────────────▼──────┐  │
+│  │              FastAPI / gRPC Server                  │  │
+│  │         /task    /status    /health                 │  │
+│  └───────────────────────────────────────────────────┘  │
+└──────────────────────────┬───────────────────────────────┘
+                           │
+          ┌────────────────┼────────────────┐
+          │                │                │
+     ┌────▼─────┐   ┌─────▼────┐   ┌──────▼──────┐
+     │ RabbitMQ │   │ LLM API  │   │ PostgreSQL │
+     │ (tasks)  │   │(OpenAI/  │   │  (results)  │
+     │          │   │ Ollama)  │   │             │
+     └──────────┘   └──────────┘   └─────────────┘
+```
+</section>
+
+<section id="containerizing-agent">
+<h2 class="doc-article__h2" id="containerizing-agent">Containerizing an Agent</h2>
+
+El Dockerfile del agente incluye el runtime de Python, las dependencias del framework de agentes, y configura un servidor HTTP para recibir tareas.
+
+```dockerfile
+# Dockerfile para un agente de IA
+FROM python:3.12-slim AS base
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /agent
+
+# Copiar dependencies primero (cache-friendly)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar código del agente
+COPY . .
+
+# Crear usuario no-root
+RUN useradd -r agent && chown -R agent:agent /agent
+USER agent
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+CMD ["uvicorn", "agent.server:app", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+### Servidor del agente
+
+```python
+# agent/server.py
+import asyncio
+from fastapi import FastAPI, BackgroundTasks
+from pydantic import BaseModel
+from agent.core import AgentRunner
+
+app = FastAPI(title="AI Agent Service")
+runner = AgentRunner()
+
+class TaskRequest(BaseModel):
+    task_id: str
+    prompt: str
+    context: dict = {}
+    max_iterations: int = 10
+
+class TaskResponse(BaseModel):
+    task_id: str
+    status: str
+    result: str | None = None
+
+@app.post("/task", response_model=TaskResponse)
+async def submit_task(req: TaskRequest, bg: BackgroundTasks):
+    """Enviar tarea al agente (async, devuelve inmediatamente)."""
+    bg.add_task(runner.execute, req.task_id, req.prompt, req.context)
+    return TaskResponse(task_id=req.task_id, status="accepted")
+
+@app.get("/task/{task_id}")
+async def get_task_status(task_id: str):
+    return runner.get_status(task_id)
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "agent": runner.name}
+```
+</section>
+
+<section id="message-driven">
+<h2 class="doc-article__h2" id="message-driven">Message-driven Communication</h2>
+
+Para sistemas multi-agente, la comunicación por colas de mensajes (RabbitMQ, Redis Streams) desacopla los agentes y permite escalado independiente.
+
+```python
+# agent/consumer.py — Consumir tareas desde RabbitMQ
+import aio_pika
+import json
+from agent.core import AgentRunner
+
+async def start_consumer():
+    connection = await aio_pika.connect_robust(
+        "amqp://user:pass@rabbitmq:5672/"
+    )
+    channel = await connection.channel()
+    await channel.set_qos(prefetch_count=1)  # Procesar 1 tarea a la vez
+
+    queue = await channel.declare_queue("agent-tasks", durable=True)
+    runner = AgentRunner()
+
+    async def process_message(message: aio_pika.IncomingMessage):
+        async with message.process():
+            task = json.loads(message.body)
+            result = await runner.execute(
+                task["task_id"],
+                task["prompt"],
+                task.get("context", {}),
+            )
+            # Publicar resultado en cola de respuestas
+            await channel.default_exchange.publish(
+                aio_pika.Message(json.dumps(result).encode()),
+                routing_key="agent-results",
+            )
+
+    await queue.consume(process_message)
+```
+</section>
+
+<section id="k8s-deployment">
+<h2 class="doc-article__h2" id="k8s-deployment">K8s Deployment</h2>
+
+Desplegar agentes en Kubernetes permite escalar horizontalmente. Cada agente es un pod que consume tareas de la cola y puede autoescalar según la carga.
+
+```yaml
+# agent-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-agent
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ai-agent
+  template:
+    spec:
+      containers:
+        - name: agent
+          image: registry.io/ai-agent:1.0.0
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          env:
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-secrets
+                  key: api-key
+            - name: RABBITMQ_URL
+              value: "amqp://user:pass@rabbitmq:5672/"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+---
+# HPA — Autoescalar basado en la longitud de la cola
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: agent-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-agent
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+```
+
+<Callout type="tip" title="KEDA para queue-based scaling">
+  Usa **KEDA** (Kubernetes Event-Driven Autoscaling) para escalar basado
+  en la longitud de la cola RabbitMQ: más mensajes pendientes → más pods agente.
+</Callout>
+</section>
+
+<section id="observability">
+<h2 class="doc-article__h2" id="observability">Observability</h2>
+
+Los agentes de IA necesitan observabilidad especial: además de métricas estándar, necesitamos tracking de **tokens consumidos**, **latency por tool** y **trazas de reasoning**.
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Métrica</th><th>Tipo</th><th>Descripción</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>`agent_tasks_total`</td><td>Counter</td><td>Total de tareas procesadas</td></tr>
+      <tr><td>`agent_task_duration_seconds`</td><td>Histogram</td><td>Duración de la ejecución completa</td></tr>
+      <tr><td>`agent_llm_tokens_total`</td><td>Counter</td><td>Tokens consumidos (input + output)</td></tr>
+      <tr><td>`agent_tool_calls_total`</td><td>Counter</td><td>Llamadas por tool</td></tr>
+      <tr><td>`agent_errors_total`</td><td>Counter</td><td>Errores por tipo</td></tr>
+      <tr><td>`agent_iterations`</td><td>Histogram</td><td>Número de pasos de reasoning por tarea</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<Callout type="info" title="Structured logging">
+  Usa **JSON logging** para que Loki/EFK pueda filtrar por
+  `task_id`, `agent_name`, `tool_name` y
+  `llm_model`. Cada iteración del agente debe loguear su paso de
+  reasoning para depuración.
+</Callout>
+</section>
+
+<section id="multi-agent-orchestration">
+<h2 class="doc-article__h2" id="multi-agent-orchestration">Multi-Agent Orchestration</h2>
+
+Cuando el sistema crece a múltiples agentes especializados, se necesita un **orquestador** que reciba las tareas, analice su naturaleza y las enrute al agente adecuado. Este patrón evita tener un "super-agente" monolítico y permite escalar cada especialista de forma independiente.
+
+```text
+Arquitectura de orquestación multi-agente
+
+┌──────────────────────────────────────────────────────────────┐
+│                     Orchestrator Agent                        │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  1. Recibe tarea                                       │  │
+│  │  2. Clasifica intent → {code_review, data, devops}     │  │
+│  │  3. Consulta registry de agentes disponibles           │  │
+│  │  4. Enruta al especialista (via Redis pub/sub)         │  │
+│  │  5. Agrega resultados                                  │  │
+│  └────────────────────────────────────────────────────────┘  │
+└──────────┬──────────────┬──────────────┬─────────────────────┘
+           │              │              │
+    ┌──────▼──────┐┌──────▼──────┐┌──────▼──────┐
+    │ Code Review ││ Data Agent  ││ DevOps      │
+    │ Agent       ││             ││ Agent       │
+    │ (3 replicas)││(2 replicas) ││(2 replicas) │
+    └──────┬──────┘└──────┬──────┘└──────┬──────┘
+           │              │              │
+    ┌──────▼──────────────▼──────────────▼──────┐
+    │          Redis (shared state + pub/sub)    │
+    └───────────────────────────────────────────┘
+```
+
+### Estado compartido via Redis
+
+Los agentes necesitan compartir estado para coordinar tareas complejas que involucran a varios especialistas. Redis funciona como el almacén de estado compartido, cola de mensajes y sistema de descubrimiento.
+
+```python
+# orchestrator/shared_state.py
+import redis.asyncio as redis
+import json
+from datetime import datetime, timedelta
+
+class SharedAgentState:
+    """Estado compartido entre agentes via Redis."""
+
+    def __init__(self, redis_url: str = "redis://redis:6379"):
+        self.redis = redis.from_url(redis_url, decode_responses=True)
+
+    async def register_agent(self, agent_id: str, capabilities: list[str]):
+        """Registrar un agente especialista con sus capacidades."""
+        agent_info = {
+            "agent_id": agent_id,
+            "capabilities": capabilities,
+            "status": "available",
+            "registered_at": datetime.utcnow().isoformat(),
+        }
+        # Hash con info del agente
+        await self.redis.hset(f"agent:{agent_id}", mapping={
+            k: json.dumps(v) if isinstance(v, list) else v
+            for k, v in agent_info.items()
+        })
+        # Índice de capacidades → agentes
+        for cap in capabilities:
+            await self.redis.sadd(f"capability:{cap}", agent_id)
+        # TTL como heartbeat — el agente renueva cada 30s
+        await self.redis.expire(f"agent:{agent_id}", 60)
+
+    async def find_agents_for_task(self, required_capability: str) -> list[str]:
+        """Encontrar agentes disponibles con la capacidad requerida."""
+        agent_ids = await self.redis.smembers(f"capability:{required_capability}")
+        available = []
+        for agent_id in agent_ids:
+            status = await self.redis.hget(f"agent:{agent_id}", "status")
+            if status == "available":
+                available.append(agent_id)
+        return available
+
+    async def set_task_result(self, task_id: str, agent_id: str, result: dict):
+        """Almacenar resultado de una sub-tarea."""
+        await self.redis.hset(f"task:{task_id}:results", agent_id, json.dumps(result))
+        await self.redis.expire(f"task:{task_id}:results", 3600)
+
+    async def get_all_results(self, task_id: str) -> dict:
+        """Obtener todos los resultados parciales de una tarea."""
+        raw = await self.redis.hgetall(f"task:{task_id}:results")
+        return {k: json.loads(v) for k, v in raw.items()}
+```
+
+### Circuit breaker para APIs de LLM
+
+Las APIs de LLM son el punto de fallo mas critico. Un circuit breaker evita cascadas de errores cuando la API esta caida, abriendo el circuito tras N fallos consecutivos y redirigiendo a un modelo de fallback.
+
+```python
+# orchestrator/circuit_breaker.py
+import asyncio
+import time
+from enum import Enum
+from dataclasses import dataclass, field
+
+class CircuitState(Enum):
+    CLOSED = "closed"       # Funcionando normal
+    OPEN = "open"           # Cortado — no envía requests
+    HALF_OPEN = "half_open" # Probando si se recuperó
+
+@dataclass
+class CircuitBreaker:
+    """Circuit breaker para llamadas a APIs de LLM."""
+    failure_threshold: int = 5          # Fallos para abrir circuito
+    recovery_timeout: float = 60.0      # Segundos antes de probar recovery
+    half_open_max_calls: int = 2        # Calls en half-open para validar
+
+    state: CircuitState = field(default=CircuitState.CLOSED)
+    failure_count: int = field(default=0)
+    last_failure_time: float = field(default=0.0)
+    half_open_calls: int = field(default=0)
+
+    async def call(self, func, *args, **kwargs):
+        """Ejecutar función protegida por circuit breaker."""
+        if self.state == CircuitState.OPEN:
+            if time.time() - self.last_failure_time > self.recovery_timeout:
+                self.state = CircuitState.HALF_OPEN
+                self.half_open_calls = 0
+            else:
+                raise CircuitBreakerOpen(
+                    f"Circuito abierto. Reintentando en "
+                    f"{self.recovery_timeout - (time.time() - self.last_failure_time):.0f}s"
+                )
+
+        try:
+            result = await func(*args, **kwargs)
+            self._on_success()
+            return result
+        except Exception as e:
+            self._on_failure()
+            raise
+
+    def _on_success(self):
+        if self.state == CircuitState.HALF_OPEN:
+            self.half_open_calls += 1
+            if self.half_open_calls >= self.half_open_max_calls:
+                self.state = CircuitState.CLOSED
+                self.failure_count = 0
+        else:
+            self.failure_count = 0
+
+    def _on_failure(self):
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        if self.failure_count >= self.failure_threshold:
+            self.state = CircuitState.OPEN
+
+class CircuitBreakerOpen(Exception):
+    pass
+```
+
+### Orquestador completo con enrutamiento inteligente
+
+El orquestador actua como punto de entrada unico: clasifica cada tarea, la enruta al agente especialista correcto, espera los resultados y los agrega en una respuesta unificada.
+
+```python
+# orchestrator/main.py
+import asyncio
+import json
+import redis.asyncio as redis
+from fastapi import FastAPI
+from pydantic import BaseModel
+from langchain_openai import ChatOpenAI
+from orchestrator.shared_state import SharedAgentState
+from orchestrator.circuit_breaker import CircuitBreaker, CircuitBreakerOpen
+
+app = FastAPI(title="Agent Orchestrator")
+state = SharedAgentState()
+llm_breaker = CircuitBreaker(failure_threshold=5, recovery_timeout=60)
+
+# LLM para clasificación (modelo rápido y barato)
+classifier_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+# LLM de fallback si el principal falla
+fallback_llm = ChatOpenAI(
+    model="gpt-4o-mini",
+    base_url="http://ollama:11434/v1",  # Ollama local como fallback
+    api_key="not-needed",
+)
+
+class OrchestratorRequest(BaseModel):
+    task_id: str
+    prompt: str
+    context: dict = {}
+
+# ── Clasificar intent de la tarea ──
+async def classify_task(prompt: str) -> str:
+    """Usar LLM rápido para determinar qué agente necesita esta tarea."""
+    classification_prompt = f"""Clasifica esta tarea en UNA categoría:
+    - code_review: revisión de código, bugs, mejoras
+    - data_analysis: consultas SQL, análisis de datos, reportes
+    - devops: infraestructura, deployment, monitoring
+    - general: cualquier otra cosa
+
+    Tarea: {prompt}
+
+    Responde SOLO con la categoría, sin explicación."""
+
+    try:
+        response = await llm_breaker.call(
+            classifier_llm.ainvoke, classification_prompt
+        )
+        return response.content.strip().lower()
+    except CircuitBreakerOpen:
+        # Fallback a modelo local si la API principal está caída
+        response = await fallback_llm.ainvoke(classification_prompt)
+        return response.content.strip().lower()
+
+# ── Enrutar tarea al agente especialista ──
+async def route_to_specialist(task_id: str, category: str, prompt: str, context: dict):
+    """Publicar tarea en el canal Redis del agente especialista."""
+    r = redis.from_url("redis://redis:6379", decode_responses=True)
+
+    # Buscar agentes disponibles para esta capacidad
+    agents = await state.find_agents_for_task(category)
+    if not agents:
+        raise ValueError(f"No hay agentes disponibles para: {category}")
+
+    # Publicar tarea en canal del tipo de agente
+    task_payload = json.dumps({
+        "task_id": task_id,
+        "prompt": prompt,
+        "context": context,
+        "assigned_to": agents[0],  # Round-robin simple
+    })
+    await r.publish(f"tasks:{category}", task_payload)
+    return agents[0]
+
+# ── Endpoint principal del orquestador ──
+@app.post("/orchestrate")
+async def orchestrate(req: OrchestratorRequest):
+    """Recibe tarea, clasifica, enruta y devuelve resultado."""
+    # 1. Clasificar
+    category = await classify_task(req.prompt)
+
+    # 2. Enrutar al especialista
+    try:
+        assigned_agent = await route_to_specialist(
+            req.task_id, category, req.prompt, req.context
+        )
+    except ValueError as e:
+        return {"task_id": req.task_id, "status": "no_agent", "error": str(e)}
+
+    # 3. Esperar resultado (con timeout)
+    try:
+        result = await asyncio.wait_for(
+            wait_for_result(req.task_id, assigned_agent),
+            timeout=120.0,
+        )
+        return {"task_id": req.task_id, "status": "completed", "result": result}
+    except asyncio.TimeoutError:
+        return {"task_id": req.task_id, "status": "timeout"}
+
+async def wait_for_result(task_id: str, agent_id: str) -> dict:
+    """Polling de resultados hasta que el agente complete."""
+    while True:
+        results = await state.get_all_results(task_id)
+        if agent_id in results:
+            return results[agent_id]
+        await asyncio.sleep(1.0)
+
+# ── Health check con estado de agentes ──
+@app.get("/health")
+async def health():
+    r = redis.from_url("redis://redis:6379", decode_responses=True)
+    agent_keys = [k async for k in r.scan_iter("agent:*")]
+    return {
+        "status": "healthy",
+        "circuit_breaker": llm_breaker.state.value,
+        "registered_agents": len(agent_keys),
+    }
+```
+
+### Docker Compose para el sistema multi-agente
+
+```yaml
+# docker-compose.yaml
+services:
+  orchestrator:
+    build: ./orchestrator
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      - redis
+
+  code-review-agent:
+    build: ./agents/code-review
+    deploy:
+      replicas: 3
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - AGENT_CAPABILITIES=code_review
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      - redis
+
+  data-agent:
+    build: ./agents/data-analysis
+    deploy:
+      replicas: 2
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - AGENT_CAPABILITIES=data_analysis
+      - DATABASE_URL=postgresql://user:pass@postgres:5432/analytics
+
+  devops-agent:
+    build: ./agents/devops
+    deploy:
+      replicas: 2
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - AGENT_CAPABILITIES=devops
+      - KUBECONFIG=/etc/kube/config
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+
+volumes:
+  redis-data:
+  ollama-models:
+```
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Patrón</th><th>Cuándo usarlo</th><th>Complejidad</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>**Orquestador centralizado**</td><td>Cuando el flujo de tareas es predecible y hay pocos tipos de agentes</td><td>Media</td></tr>
+      <tr><td>**Service mesh (Istio/Linkerd)**</td><td>Cuando los agentes necesitan comunicarse directamente entre sí con mTLS</td><td>Alta</td></tr>
+      <tr><td>**Event-driven (Redis pub/sub)**</td><td>Cuando los agentes son independientes y procesan eventos asíncronamente</td><td>Baja</td></tr>
+      <tr><td>**Jerárquico (manager agent)**</td><td>Cuando las tareas requieren descomposición dinámica en sub-tareas</td><td>Alta</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<Callout type="warning" title="Circuit breaker es obligatorio">
+  Sin circuit breaker, un fallo en la API de OpenAI puede derribar **todo** el sistema
+  multi-agente. Cada agente y el orquestador deben tener su propio circuit breaker
+  configurado. Usa un modelo local (Ollama) como fallback para mantener disponibilidad
+  parcial cuando la API externa está caída.
+</Callout>
+</section>

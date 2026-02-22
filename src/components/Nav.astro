@@ -1,57 +1,76 @@
 ---
 /**
  * Nav — Fixed top navigation bar.
- * Has two modes:
- *   - "landing": normal links (Inicio, Librería)
+ * Accepts a mode prop to render the appropriate layout:
+ *   - "landing": normal links (Inicio, Librería, Canvas)
  *   - "doc": back button + topic breadcrumb
  */
+interface Props {
+  mode?: 'landing' | 'doc';
+  breadcrumb?: string[];
+}
+
+const { mode = 'landing', breadcrumb = [] } = Astro.props;
+const baseUrl = import.meta.env.BASE_URL;
 ---
 
 <nav class="nav" id="main-nav">
   <div class="nav__inner container">
     <!-- Logo (always visible) -->
-    <a href="#hero" class="nav__logo" id="nav-logo" aria-label="Ir al inicio">
+    <a href={baseUrl} class="nav__logo" id="nav-logo" aria-label="Ir al inicio">
       <i data-lucide="notebook-pen" class="nav__logo-icon"></i>
       <span class="nav__logo-text">cookbooks_</span>
     </a>
 
-    <!-- LANDING MODE: normal links -->
-    <div class="nav__landing" id="nav-landing">
-      <div class="nav__links">
-        <a href="#hero" class="nav__link">Inicio</a>
-        <a href="#library" class="nav__link">Librería</a>
-        <a href="#canvas" class="nav__link">Canvas</a>
+    {mode === 'landing' && (
+      <>
+        <!-- LANDING MODE: normal links -->
+        <div class="nav__landing" id="nav-landing">
+          <div class="nav__links">
+            <a href={`${baseUrl}#hero`} class="nav__link">Inicio</a>
+            <a href={`${baseUrl}#library`} class="nav__link">Librería</a>
+            <a href={`${baseUrl}canvas`} class="nav__link">Canvas</a>
+          </div>
+          <a href={`${baseUrl}#library`} class="nav__cta">
+            <i data-lucide="book-open" class="nav__cta-icon"></i>
+            Explorar
+          </a>
+        </div>
+
+        <!-- Mobile hamburger (landing only) -->
+        <button class="nav__hamburger" id="nav-toggle" aria-label="Abrir menú">
+          <i data-lucide="menu" class="nav__hamburger-icon"></i>
+        </button>
+      </>
+    )}
+
+    {mode === 'doc' && (
+      <!-- DOC MODE: back + breadcrumb -->
+      <div class="nav__doc active">
+        <a href={baseUrl} class="nav__back-btn">
+          <i data-lucide="arrow-left" class="nav__back-icon"></i>
+          <span class="nav__back-label">Librería</span>
+        </a>
+        <div class="nav__breadcrumb">
+          {breadcrumb.map((crumb, i) => (
+            <>
+              <span class={i === breadcrumb.length - 1 ? 'bc-current' : ''}>{crumb}</span>
+              {i < breadcrumb.length - 1 && <span class="bc-sep">/</span>}
+            </>
+          ))}
+        </div>
       </div>
-      <a
-        href="#library"
-        class="nav__cta"
-      >
-        <i data-lucide="book-open" class="nav__cta-icon"></i>
-        Explorar
-      </a>
-    </div>
-
-    <!-- DOC MODE: back + breadcrumb (hidden by default) -->
-    <div class="nav__doc" id="nav-doc">
-      <button class="nav__back-btn" id="nav-back">
-        <i data-lucide="arrow-left" class="nav__back-icon"></i>
-        <span class="nav__back-label">Librería</span>
-      </button>
-      <div class="nav__breadcrumb" id="nav-breadcrumb"></div>
-    </div>
-
-    <!-- Mobile hamburger (landing only) -->
-    <button class="nav__hamburger" id="nav-toggle" aria-label="Abrir menú">
-      <i data-lucide="menu" class="nav__hamburger-icon"></i>
-    </button>
+    )}
   </div>
 
-  <!-- Mobile menu (landing only) -->
-  <div class="nav__mobile hidden" id="nav-mobile">
-    <a href="#hero" class="nav__mobile-link">Inicio</a>
-    <a href="#library" class="nav__mobile-link">Librería</a>
-    <a href="#canvas" class="nav__mobile-link">Canvas</a>
-  </div>
+  {mode === 'landing' && (
+    <!-- Mobile menu (landing only) -->
+    <div class="nav__mobile hidden" id="nav-mobile">
+      <a href={`${baseUrl}#hero`} class="nav__mobile-link">Inicio</a>
+      <a href={`${baseUrl}#library`} class="nav__mobile-link">Librería</a>
+      <a href={`${baseUrl}canvas`} class="nav__mobile-link">Canvas</a>
+    </div>
+  )}
 </nav>
 
 <style>

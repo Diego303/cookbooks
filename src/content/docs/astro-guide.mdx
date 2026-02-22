@@ -1,0 +1,767 @@
+---
+title: "Astro Framework"
+description: "Desarrollo de sitios web con Astro: islands architecture, componentes, SSG y content collections."
+intro: "Guía completa del framework Astro para sitios web de alto rendimiento. Cubre la Islands Architecture, componentes, layouts, Content Collections e integraciones con frameworks como React, Vue y Svelte."
+category: "FRONTEND"
+categoryColor: "green"
+icon: "rocket"
+tags: ["Astro", "Islands", "SSG"]
+breadcrumb: ["Docs", "Frontend", "Astro Framework"]
+order: 9
+toc:
+  - { id: "astro-fundamentals", label: "Fundamentals" }
+  - { id: "islands-architecture", label: "Islands Architecture" }
+  - { id: "components-layouts", label: "Components & Layouts" }
+  - { id: "content-collections", label: "Content Collections" }
+  - { id: "integrations", label: "Integrations" }
+  - { id: "view-transitions", label: "View Transitions" }
+  - { id: "seo-performance", label: "SEO & Performance" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="astro-fundamentals">
+<h2 class="doc-article__h2" id="astro-fundamentals">Fundamentals</h2>
+
+Astro es un framework **content-first** que genera HTML estático por defecto, cargando JavaScript solo cuando es estrictamente necesario. El resultado es sitios extremadamente rápidos con cero JS por defecto.
+
+### Estructura del proyecto
+
+```text
+Estructura estándar de un proyecto Astro
+
+astro-project/
+├── public/               # Assets estáticos (copiados tal cual)
+│   ├── favicon.svg
+│   └── images/
+├── src/
+│   ├── components/       # Componentes .astro, .tsx, .vue
+│   ├── layouts/          # Layouts reutilizables
+│   ├── pages/            # File-based routing
+│   ├── styles/           # CSS global
+│   ├── content/          # Content Collections (Markdown/MDX)
+│   └── data/             # Data files (.ts, .json)
+├── astro.config.mjs      # Configuración principal
+├── tsconfig.json
+└── package.json
+```
+
+### Archivo de componente .astro
+
+```astro
+---
+// Frontmatter: JavaScript del servidor (se ejecuta en build-time)
+interface Props {
+  title: string;
+  variant?: 'primary' | 'secondary';
+}
+
+const { title, variant = 'primary' } = Astro.props;
+const isExternal = title.startsWith('http');
+---
+
+<!-- Template: HTML que se renderiza -->
+<div class={`card card--${variant}`}>
+  <h2>{title}</h2>
+  <slot />  <!-- Contenido hijo -->
+</div>
+
+<style>
+  /* Estilos scoped por defecto — no afectan otros componentes */
+  .card { padding: 1rem; border-radius: 8px; }
+  .card--primary { background: var(--bg-surface); }
+  .card--secondary { background: var(--bg-void); }
+</style>
+```
+
+<Callout type="info" title="Zero JavaScript por defecto">
+  A diferencia de React/Next.js, Astro **no envía JavaScript al cliente**
+  a menos que uses la directiva `client:*`. El HTML se genera en build-time
+  y se sirve como estático.
+</Callout>
+</section>
+
+<section id="islands-architecture">
+<h2 class="doc-article__h2" id="islands-architecture">Islands Architecture</h2>
+
+Las **Islands** (islas) son componentes interactivos que se hidratan independientemente en una página de HTML estático. Cada isla carga su propio JavaScript solo cuando lo necesita.
+
+```text
+Islands Architecture — Hidratación selectiva
+
+┌──────────────────────────────────────────────────────────┐
+│                   Página HTML estática                   │
+│                                                          │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │  Header (HTML puro — zero JS)                     │    │
+│  └──────────────────────────────────────────────────┘    │
+│                                                          │
+│  ┌──────────┐  ┌─────────────────────────────┐          │
+│  │ Island   │  │  Artículo (HTML puro)         │          │
+│  │ Search   │  │                             │          │
+│  │ (React)  │  │  Texto estático, imágenes,  │          │
+│  │ JS: 12kb │  │  sin ningún JavaScript      │          │
+│  └──────────┘  └─────────────────────────────┘          │
+│                                                          │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │  Footer (HTML puro — zero JS)                     │    │
+│  └──────────────────────────────────────────────────┘    │
+│                                                          │
+│  ┌──────────────────┐                                    │
+│  │ Island Newsletter │  (Svelte, JS: 4kb, client:visible) │
+│  └──────────────────┘                                    │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Directivas de hidratación
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Directiva</th><th>Comportamiento</th><th>Caso de uso</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>`client:load`</td><td>Se hidrata inmediatamente al cargar la página</td><td>Componentes críticos visibles al inicio</td></tr>
+      <tr><td>`client:idle`</td><td>Se hidrata cuando el navegador está en idle</td><td>Componentes no urgentes</td></tr>
+      <tr><td>`client:visible`</td><td>Se hidrata al entrar en el viewport</td><td>Componentes bajo el fold</td></tr>
+      <tr><td>`client:media`</td><td>Se hidrata al cumplir un media query</td><td>Componentes solo desktop</td></tr>
+      <tr><td>`client:only`</td><td>No SSR, solo client-side render</td><td>Componentes que usan APIs del browser</td></tr>
+    </tbody>
+  </table>
+</div>
+
+```astro
+---
+// Importar componentes de diferentes frameworks
+import SearchBar from '../components/SearchBar.tsx';
+import Newsletter from '../components/Newsletter.svelte';
+---
+
+<!-- Se hidrata inmediatamente — el buscador es crítico -->
+<SearchBar client:load />
+
+<!-- Se hidrata al ser visible — no urgente -->
+<Newsletter client:visible />
+
+<!-- Solo en desktop -->
+<DesktopSidebar client:media="(min-width: 1024px)" />
+```
+</section>
+
+<section id="components-layouts">
+<h2 class="doc-article__h2" id="components-layouts">Components & Layouts</h2>
+
+Los **Layouts** en Astro son componentes especiales que envuelven páginas con estructura HTML compartida (head, nav, footer). Usan `<slot />` para inyectar el contenido de cada página.
+
+```astro
+---
+// src/layouts/BaseLayout.astro
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = 'Documentation site' } = Astro.props;
+---
+
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={description} />
+    <title>{title}</title>
+    <slot name="head" />  <!-- Named slot para scripts/css extra -->
+  </head>
+  <body>
+    <Nav />
+    <main>
+      <slot />  <!-- Default slot — contenido de la página -->
+    </main>
+    <Footer />
+  </body>
+</html>
+```
+
+<Callout type="tip" title="Named slots">
+  Usa `<slot name="head" />` en el layout y
+  `<Fragment slot="head">...</Fragment>` en la página
+  para inyectar código en secciones específicas del layout.
+</Callout>
+</section>
+
+<section id="content-collections">
+<h2 class="doc-article__h2" id="content-collections">Content Collections</h2>
+
+Las **Content Collections** permiten gestionar contenido Markdown/MDX con validación de schema (Zod), tipado TypeScript y queries tipadas.
+
+```typescript
+// src/content/config.ts
+import { defineCollection, z } from 'astro:content';
+
+const docs = defineCollection({
+  type: 'content',
+  schema: z.object({
+    title: z.string(),
+    description: z.string(),
+    category: z.enum(['guide', 'reference', 'tutorial']),
+    order: z.number(),
+    draft: z.boolean().default(false),
+    publishedAt: z.date(),
+    tags: z.array(z.string()).optional(),
+  }),
+});
+
+export const collections = { docs };
+```
+
+```astro
+---
+// src/pages/docs/[slug].astro — Página dinámica para cada doc
+import { getCollection } from 'astro:content';
+
+export async function getStaticPaths() {
+  const docs = await getCollection('docs', ({ data }) => !data.draft);
+  return docs.map((entry) => ({
+    params: { slug: entry.slug },
+    props: { entry },
+  }));
+}
+
+const { entry } = Astro.props;
+const { Content, headings } = await entry.render();
+---
+
+<BaseLayout title={entry.data.title}>
+  <article>
+    <h1>{entry.data.title}</h1>
+    <Content />
+  </article>
+</BaseLayout>
+```
+</section>
+
+<section id="integrations">
+<h2 class="doc-article__h2" id="integrations">Integrations</h2>
+
+Astro soporta integraciones oficiales y de la comunidad para añadir funcionalidad: frameworks UI, adaptadores SSR, optimizaciones de imagen y más.
+
+```javascript
+// astro.config.mjs
+import { defineConfig } from 'astro/config';
+import react from '@astrojs/react';
+import sitemap from '@astrojs/sitemap';
+import node from '@astrojs/node';
+
+export default defineConfig({
+  site: 'https://docs.example.com',
+  integrations: [
+    react(),             // Soporte para componentes .tsx
+    sitemap(),           // Genera sitemap.xml automático
+  ],
+  output: 'hybrid',       // static por defecto, con opt-in SSR
+  adapter: node({
+    mode: 'standalone',
+  }),
+});
+```
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Integración</th><th>Comando</th><th>Función</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>React</td><td>`npx astro add react`</td><td>Componentes .tsx interactivos</td></tr>
+      <tr><td>Vue</td><td>`npx astro add vue`</td><td>Componentes .vue</td></tr>
+      <tr><td>Tailwind</td><td>`npx astro add tailwind`</td><td>Utility-first CSS</td></tr>
+      <tr><td>MDX</td><td>`npx astro add mdx`</td><td>Markdown + JSX</td></tr>
+      <tr><td>Sitemap</td><td>`npx astro add sitemap`</td><td>SEO sitemap.xml</td></tr>
+      <tr><td>Node</td><td>`npx astro add node`</td><td>SSR adapter para Node.js</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<Callout type="tip" title="npx astro add">
+  `npx astro add <integration>` instala automáticamente el paquete
+  y actualiza `astro.config.mjs`. No necesitas configurar nada manualmente.
+</Callout>
+</section>
+
+<section id="view-transitions">
+<h2 class="doc-article__h2" id="view-transitions">View Transitions</h2>
+
+Las **View Transitions** de Astro permiten crear transiciones fluidas entre páginas sin necesidad de un framework SPA. El navegador anima el cambio de página de forma nativa, manteniendo el rendimiento de un sitio estático con la experiencia de una aplicación de página única.
+
+### Activar View Transitions en el layout
+
+Para habilitar las transiciones, importa el componente `<ViewTransitions />` y colócalo dentro del `<head>` de tu layout principal. Todas las páginas que usen ese layout tendrán transiciones automáticas.
+
+```astro
+---
+// src/layouts/BaseLayout.astro
+import { ViewTransitions } from 'astro:transitions';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = 'Documentación' } = Astro.props;
+---
+
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={description} />
+    <title>{title}</title>
+    <!-- Activa las View Transitions en todas las páginas del layout -->
+    <ViewTransitions />
+  </head>
+  <body>
+    <nav><!-- navegación persistente --></nav>
+    <main>
+      <slot />
+    </main>
+  </body>
+</html>
+```
+
+### Transiciones con nombre (element morphing)
+
+Usa la directiva `transition:name` para que Astro identifique elementos equivalentes entre dos páginas y cree una animación de transformación (morph) entre ellos. El valor debe ser único dentro de cada página.
+
+```astro
+---
+// src/pages/blog/index.astro — Listado de artículos
+import { getCollection } from 'astro:content';
+const posts = await getCollection('blog');
+---
+
+<BaseLayout title="Blog">
+  <ul>
+    {posts.map((post) => (
+      <li>
+        <a href={`/blog/${post.slug}`}>
+          <!-- El nombre vincula este elemento con su equivalente en la página de detalle -->
+          <img
+            src={post.data.cover}
+            alt={post.data.title}
+            transition:name={`cover-${post.slug}`}
+          />
+          <h2 transition:name={`title-${post.slug}`}>
+            {post.data.title}
+          </h2>
+        </a>
+      </li>
+    ))}
+  </ul>
+</BaseLayout>
+```
+
+```astro
+---
+// src/pages/blog/[slug].astro — Detalle del artículo
+import { getCollection } from 'astro:content';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog');
+  return posts.map((post) => ({
+    params: { slug: post.slug },
+    props: { post },
+  }));
+}
+
+const { post } = Astro.props;
+const { Content } = await post.render();
+---
+
+<BaseLayout title={post.data.title}>
+  <article>
+    <!-- Mismos transition:name que en el listado — Astro anima entre ambos -->
+    <img
+      src={post.data.cover}
+      alt={post.data.title}
+      transition:name={`cover-${post.slug}`}
+    />
+    <h1 transition:name={`title-${post.slug}`}>
+      {post.data.title}
+    </h1>
+    <Content />
+  </article>
+</BaseLayout>
+```
+
+### Directivas de animación
+
+La directiva `transition:animate` controla el tipo de animación que Astro aplica a un elemento durante la transición de página.
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Directiva</th><th>Efecto</th><th>Uso recomendado</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>`transition:animate="fade"`</td><td>Fundido cruzado (opacidad)</td><td>Contenido general, imágenes de fondo</td></tr>
+      <tr><td>`transition:animate="slide"`</td><td>Deslizamiento lateral con fade</td><td>Paneles laterales, navegación paso a paso</td></tr>
+      <tr><td>`transition:animate="initial"`</td><td>Sin animación especial (reflow normal)</td><td>Elementos que no deben animarse</td></tr>
+      <tr><td>`transition:animate="none"`</td><td>Desactiva la transición en el elemento</td><td>Elementos que deben permanecer estáticos</td></tr>
+    </tbody>
+  </table>
+</div>
+
+```astro
+<!-- El sidebar se desliza, el contenido hace fade -->
+<aside transition:animate="slide">
+  <TableOfContents />
+</aside>
+
+<article transition:animate="fade">
+  <slot />
+</article>
+
+<!-- El header no se anima — permanece estable -->
+<header transition:animate="none">
+  <Nav />
+</header>
+```
+
+### Persistir islas entre navegaciones
+
+Cuando un componente interactivo (isla) debe mantener su estado entre navegaciones (por ejemplo, un reproductor de audio o un chat), usa `transition:persist`. Astro reutiliza la instancia del componente en lugar de destruirla y recrearla.
+
+```astro
+---
+import AudioPlayer from '../components/AudioPlayer.tsx';
+import ChatWidget from '../components/ChatWidget.svelte';
+---
+
+<!-- El reproductor mantiene la canción actual al navegar entre páginas -->
+<AudioPlayer client:load transition:persist />
+
+<!-- El chat conserva el historial de mensajes -->
+<ChatWidget client:load transition:persist />
+```
+
+### Eventos del ciclo de vida
+
+Astro expone eventos que permiten ejecutar código en momentos específicos de la transición. Son útiles para animaciones personalizadas, limpieza de estado o analytics.
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Evento</th><th>Momento</th><th>Caso de uso</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>`astro:before-preparation`</td><td>Antes de cargar el contenido de la nueva página</td><td>Mostrar indicador de carga, cancelar navegación</td></tr>
+      <tr><td>`astro:after-preparation`</td><td>Después de cargar el contenido pero antes de intercambiarlo</td><td>Modificar el DOM de la nueva página antes de mostrarla</td></tr>
+      <tr><td>`astro:before-swap`</td><td>Justo antes de reemplazar el DOM antiguo con el nuevo</td><td>Animaciones de salida personalizadas, guardar estado del scroll</td></tr>
+      <tr><td>`astro:after-swap`</td><td>Después de reemplazar el DOM, antes de que la transición finalice</td><td>Reinicializar librerías de terceros, restaurar estado</td></tr>
+      <tr><td>`astro:page-load`</td><td>La página nueva está completamente cargada y visible</td><td>Analytics de página vista, inicializar widgets</td></tr>
+    </tbody>
+  </table>
+</div>
+
+```astro
+<script>
+  // Registrar una página vista cada vez que se completa una transición
+  document.addEventListener('astro:page-load', () => {
+    analytics.track('page_view', { url: window.location.pathname });
+  });
+
+  // Mostrar una barra de progreso durante la carga
+  document.addEventListener('astro:before-preparation', () => {
+    document.getElementById('progress-bar')?.classList.add('loading');
+  });
+
+  // Ocultar la barra cuando el DOM ya se intercambió
+  document.addEventListener('astro:after-swap', () => {
+    document.getElementById('progress-bar')?.classList.remove('loading');
+  });
+</script>
+```
+
+### Comparativa: con y sin View Transitions
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Aspecto</th><th>Sin View Transitions</th><th>Con View Transitions</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Navegación entre páginas</td><td>Recarga completa del navegador (flash blanco)</td><td>Transición fluida animada sin recarga visible</td></tr>
+      <tr><td>Estado de islas</td><td>Se destruyen y recrean en cada navegación</td><td>Persistentes con `transition:persist`</td></tr>
+      <tr><td>Animaciones entre páginas</td><td>No disponibles de forma nativa</td><td>Fade, slide y morph de elementos con nombre</td></tr>
+      <tr><td>JavaScript adicional</td><td>Ninguno</td><td>Router ligero de Astro (~3 KB)</td></tr>
+      <tr><td>Compatibilidad navegadores</td><td>Universal</td><td>Fallback automático en navegadores sin soporte</td></tr>
+      <tr><td>SEO</td><td>Sin cambios</td><td>Sin impacto — sigue siendo HTML estático</td></tr>
+      <tr><td>Experiencia percibida</td><td>Sitio web estático tradicional</td><td>Sensación de aplicación SPA</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<Callout type="info" title="Fallback automático">
+  En navegadores que no soportan la View Transitions API nativa (como Firefox a
+  fecha de 2025), Astro aplica un fallback que replica el comportamiento usando
+  animaciones CSS. No necesitas código adicional para manejar la compatibilidad.
+</Callout>
+</section>
+
+<section id="seo-performance">
+<h2 class="doc-article__h2" id="seo-performance">SEO & Performance</h2>
+
+Astro genera HTML estático por defecto, lo que proporciona una base excelente para SEO. Sin embargo, una configuración adecuada de meta tags, imágenes optimizadas y estrategias de prefetching marcan la diferencia entre un sitio rápido y uno que domina los resultados de búsqueda.
+
+### Componente SEO reutilizable
+
+Centraliza toda la gestión de meta tags en un único componente que incluyes en el layout. Esto garantiza consistencia y facilita el mantenimiento.
+
+```astro
+---
+// src/components/SEO.astro
+interface Props {
+  title: string;
+  description: string;
+  canonical?: string;
+  image?: string;
+  type?: 'website' | 'article';
+  publishedDate?: string;
+  noindex?: boolean;
+}
+
+const {
+  title,
+  description,
+  canonical = Astro.url.href,
+  image = '/images/og-default.jpg',
+  type = 'website',
+  publishedDate,
+  noindex = false,
+} = Astro.props;
+
+const siteName = 'Mi Documentación';
+const fullImageUrl = new URL(image, Astro.site).href;
+---
+
+<!-- Meta tags básicos -->
+<title>{title} | {siteName}</title>
+<meta name="description" content={description} />
+<link rel="canonical" href={canonical} />
+{noindex && <meta name="robots" content="noindex, nofollow" />}
+
+<!-- Open Graph (Facebook, LinkedIn, WhatsApp) -->
+<meta property="og:type" content={type} />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+<meta property="og:image" content={fullImageUrl} />
+<meta property="og:url" content={canonical} />
+<meta property="og:site_name" content={siteName} />
+{publishedDate && <meta property="article:published_time" content={publishedDate} />}
+
+<!-- Twitter Cards -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={title} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={fullImageUrl} />
+```
+
+```astro
+---
+// src/layouts/BaseLayout.astro — Uso del componente SEO
+import SEO from '../components/SEO.astro';
+import { ViewTransitions } from 'astro:transitions';
+
+const { title, description, image } = Astro.props;
+---
+
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <SEO title={title} description={description} image={image} />
+    <ViewTransitions />
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>
+```
+
+### URLs canónicas y robots.txt
+
+La URL canónica evita contenido duplicado cuando una misma página es accesible desde múltiples URLs. El archivo `robots.txt` indica a los crawlers qué secciones indexar.
+
+```text
+# public/robots.txt
+User-agent: *
+Allow: /
+
+# Bloquear rutas que no deben indexarse
+Disallow: /admin/
+Disallow: /api/
+Disallow: /preview/
+
+# Ubicación del sitemap
+Sitemap: https://docs.example.com/sitemap-index.xml
+```
+
+### Generación automática de sitemap
+
+La integración `@astrojs/sitemap` genera un `sitemap-index.xml` con todas las páginas del sitio durante el build. Es fundamental para que los motores de búsqueda descubran tu contenido.
+
+```javascript
+// astro.config.mjs
+import { defineConfig } from 'astro/config';
+import sitemap from '@astrojs/sitemap';
+
+export default defineConfig({
+  site: 'https://docs.example.com',   // Obligatorio para sitemap
+  integrations: [
+    sitemap({
+      filter: (page) =>
+        // Excluir páginas internas del sitemap
+        !page.includes('/admin/') &&
+        !page.includes('/preview/'),
+      changefreq: 'weekly',
+      priority: 0.7,
+      lastmod: new Date(),
+    }),
+  ],
+});
+```
+
+### Optimización de imágenes con astro:assets
+
+El componente `<Image />` de `astro:assets` optimiza imágenes automáticamente: convierte a formatos modernos (WebP/AVIF), genera tamaños responsive y aplica lazy loading.
+
+```astro
+---
+// src/pages/docs/guia.astro
+import { Image } from 'astro:assets';
+
+// Imágenes locales — se optimizan en build-time
+import diagramaArq from '../../assets/images/diagrama-arquitectura.png';
+import capturaUI from '../../assets/images/captura-dashboard.png';
+---
+
+<!-- Imagen local optimizada: genera WebP, calcula width/height automáticamente -->
+<Image
+  src={diagramaArq}
+  alt="Diagrama de la arquitectura del sistema"
+  widths={[400, 800, 1200]}
+  sizes="(max-width: 600px) 400px, (max-width: 1024px) 800px, 1200px"
+  format="webp"
+  quality={80}
+/>
+
+<!-- Imagen con densidad de píxeles para pantallas retina -->
+<Image
+  src={capturaUI}
+  alt="Captura del dashboard principal"
+  width={800}
+  densities={[1.5, 2]}
+/>
+
+<!-- Imagen remota — requiere configurar dominios permitidos -->
+<Image
+  src="https://cdn.example.com/images/banner.jpg"
+  alt="Banner promocional"
+  width={1200}
+  height={630}
+  format="avif"
+/>
+```
+
+```javascript
+// astro.config.mjs — Permitir dominios de imágenes remotas
+import { defineConfig } from 'astro/config';
+
+export default defineConfig({
+  image: {
+    domains: ['cdn.example.com', 'images.unsplash.com'],
+    // Servicio de optimización (sharp por defecto)
+    service: { entrypoint: 'astro/assets/services/sharp' },
+  },
+});
+```
+
+<Callout type="warning" title="Imágenes remotas">
+  Las imágenes remotas requieren `width` y `height` explícitos porque Astro
+  no puede calcular las dimensiones en build-time. Siempre declara los dominios
+  permitidos en `astro.config.mjs` para evitar errores durante el build.
+</Callout>
+
+### Estrategias de prefetching
+
+Astro puede precargar las páginas a las que el usuario probablemente navegará, haciendo que las transiciones sean prácticamente instantáneas.
+
+```javascript
+// astro.config.mjs
+import { defineConfig } from 'astro/config';
+
+export default defineConfig({
+  prefetch: {
+    // Estrategia por defecto para todos los enlaces
+    defaultStrategy: 'hover',
+
+    // Precargar solo páginas del mismo sitio
+    prefetchAll: false,
+  },
+});
+```
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Estrategia</th><th>Comportamiento</th><th>Uso recomendado</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>`hover`</td><td>Precarga cuando el cursor se posiciona sobre el enlace</td><td>Navegación principal, enlaces frecuentes. Buen equilibrio entre rendimiento y consumo de datos</td></tr>
+      <tr><td>`viewport`</td><td>Precarga cuando el enlace entra en el viewport</td><td>Listados de artículos, enlaces visibles. Más agresivo pero mejora la percepción de velocidad</td></tr>
+      <tr><td>`load`</td><td>Precarga todos los enlaces al cargar la página</td><td>Sitios pequeños con pocas páginas. Consume más ancho de banda</td></tr>
+      <tr><td>`tap`</td><td>Precarga cuando el usuario hace click/touch en el enlace</td><td>Conexiones lentas o móviles. La mejora es mínima pero ahorra datos</td></tr>
+    </tbody>
+  </table>
+</div>
+
+```astro
+<!-- Sobreescribir la estrategia por defecto en un enlace específico -->
+<a href="/docs/guia-avanzada" data-astro-prefetch="viewport">
+  Guía avanzada
+</a>
+
+<!-- Desactivar prefetch en un enlace externo o poco visitado -->
+<a href="/legacy/deprecated" data-astro-prefetch="false">
+  Documentación antigua
+</a>
+```
+
+### Performance budgets y buenas prácticas
+
+Establecer presupuestos de rendimiento ayuda a mantener la calidad del sitio a medida que crece. Estos son los objetivos recomendados para un sitio de documentación con Astro.
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Métrica Lighthouse</th><th>Objetivo</th><th>Cómo lograrlo en Astro</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Performance</td><td>95-100</td><td>HTML estático por defecto, zero JS innecesario. Usar `client:visible` en vez de `client:load` siempre que sea posible</td></tr>
+      <tr><td>First Contentful Paint</td><td>&lt; 1.0s</td><td>Evitar fuentes externas bloqueantes. Usar `<link rel="preload">` para fuentes críticas</td></tr>
+      <tr><td>Largest Contentful Paint</td><td>&lt; 1.5s</td><td>Optimizar imágenes hero con `<Image />`, usar `loading="eager"` y `fetchpriority="high"` en la imagen principal</td></tr>
+      <tr><td>Total Blocking Time</td><td>&lt; 50ms</td><td>Minimizar islas con `client:load`. Preferir `client:idle` o `client:visible`</td></tr>
+      <tr><td>Cumulative Layout Shift</td><td>&lt; 0.05</td><td>Siempre declarar `width` y `height` en imágenes. Reservar espacio para contenido dinámico</td></tr>
+      <tr><td>Accessibility</td><td>100</td><td>HTML semántico, atributos `alt` en imágenes, contraste adecuado, navegación por teclado</td></tr>
+      <tr><td>Best Practices</td><td>100</td><td>HTTPS, sin errores en consola, imágenes en formato moderno (WebP/AVIF)</td></tr>
+      <tr><td>SEO</td><td>100</td><td>Componente SEO con meta tags, sitemap.xml, robots.txt, URLs canónicas</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<Callout type="tip" title="Auditar antes de cada deploy">
+  Ejecuta `npx unlighthouse --site https://tu-sitio.com` para auditar todas
+  las páginas del sitio en una sola pasada. Combínalo con
+  `astro build && npx serve dist` para auditar localmente antes de subir a
+  producción.
+</Callout>
+</section>

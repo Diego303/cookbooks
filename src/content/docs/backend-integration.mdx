@@ -1,0 +1,1782 @@
+---
+title: "Backend Integration"
+description: "Documentación completa de endpoints, esquemas JSON y ejemplos de cURL para integración."
+intro: "Esta guía describe cómo integrar tu servicio con nuestra API RESTful. Diseñada para ser intuitiva y predecible, nuestra API utiliza características estándar de HTTP como verbos, códigos de respuesta y autenticación basada en tokens. Encontrarás ejemplos prácticos de cURL, Python y JavaScript listos para copiar y pegar en tu día a día."
+category: "REST API"
+categoryColor: "cyan"
+icon: "server"
+tags: ["v1.4.2", "OpenAPI"]
+breadcrumb: ["Docs", "REST API", "Integration Guide"]
+order: 2
+toc:
+  - { id: "authentication", label: "Authentication" }
+  - { id: "endpoints-crud", label: "Endpoints & CRUD" }
+  - { id: "request-response-format", label: "Request & Response Format" }
+  - { id: "error-handling", label: "Error Handling" }
+  - { id: "pagination-filtering", label: "Pagination & Filtering" }
+  - { id: "rate-limiting", label: "Rate Limiting" }
+  - { id: "webhooks", label: "Webhooks" }
+  - { id: "sdk-client-generation", label: "SDK & Client Generation" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="authentication">
+<h2 class="doc-article__h2" id="authentication">Authentication <span class="doc-article__badge">Required</span></h2>
+
+La API soporta multiples esquemas de autenticacion. El metodo principal es **Bearer Token** via el header
+<code class="doc-inline-code doc-inline-code--cyan">Authorization</code>, pero tambien puedes usar API Keys y OAuth2 segun el caso de uso.
+
+### Bearer Token (JWT)
+
+Envia tu token en cada peticion con el prefijo `Bearer`:
+
+```bash
+curl https://api.cookbooks.dev/v1/projects \
+  -H "Authorization: Bearer sk_test_51Mz..." \
+  -H "Content-Type: application/json"
+```
+
+### Flujo OAuth2 (Authorization Code)
+
+Para integraciones de terceros que necesitan actuar en nombre de un usuario, usa el flujo OAuth2 Authorization Code:
+
+```text
+Flujo OAuth2 Authorization Code
+
+┌──────────┐                              ┌──────────────┐                        ┌──────────┐
+│  Usuario  │                              │   Tu App     │                        │  API     │
+└─────┬────┘                              └──────┬───────┘                        └────┬─────┘
+      │  1. Click "Conectar"                      │                                     │
+      │──────────────────────────────────────────>│                                     │
+      │                                           │  2. Redirect a /oauth/authorize       │
+      │<──────────────────────────────────────────│                                     │
+      │  3. Login + Autoriza permisos             │                                     │
+      │──────────────────────────────────────────>│                                     │
+      │                                           │  4. Callback con ?code=abc123         │
+      │                                           │<────────────────────────────────────│
+      │                                           │  5. POST /oauth/token {code}          │
+      │                                           │────────────────────────────────────>│
+      │                                           │  6. {access_token, refresh_token}     │
+      │                                           │<────────────────────────────────────│
+      │  7. Acceso a recursos protegidos          │                                     │
+      │<──────────────────────────────────────────│                                     │
+```
+
+```bash
+# Paso 5: Intercambiar el código por tokens
+curl -X POST https://api.cookbooks.dev/oauth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=authorization_code" \
+  -d "code=abc123" \
+  -d "client_id=tu_client_id" \
+  -d "client_secret=tu_client_secret" \
+  -d "redirect_uri=https://tuapp.com/callback"
+```
+
+```json
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "rt_dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4...",
+  "scope": "projects:read projects:write"
+}
+```
+
+### Refresh de tokens
+
+Cuando un access token expira, usa el refresh token para obtener uno nuevo sin pedir credenciales al usuario:
+
+```bash
+curl -X POST https://api.cookbooks.dev/oauth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=refresh_token" \
+  -d "refresh_token=rt_dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4..." \
+  -d "client_id=tu_client_id" \
+  -d "client_secret=tu_client_secret"
+```
+
+```python
+import requests
+import time
+
+class TokenManager:
+    """Gestiona tokens con refresh automatico."""
+
+    def __init__(self, client_id, client_secret, refresh_token):
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.refresh_token = refresh_token
+        self.access_token = None
+        self.expires_at = 0
+
+    def get_token(self):
+        if time.time() >= self.expires_at - 60:  # Renovar 60s antes
+            self._refresh()
+        return self.access_token
+
+    def _refresh(self):
+        resp = requests.post("https://api.cookbooks.dev/oauth/token", data={
+            "grant_type": "refresh_token",
+            "refresh_token": self.refresh_token,
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+        })
+        resp.raise_for_status()
+        data = resp.json()
+        self.access_token = data["access_token"]
+        self.expires_at = time.time() + data["expires_in"]
+        if "refresh_token" in data:
+            self.refresh_token = data["refresh_token"]
+
+# Uso
+token_mgr = TokenManager("id", "secret", "rt_...")
+headers = {"Authorization": f"Bearer {token_mgr.get_token()}"}
+```
+
+### Comparacion de esquemas de autenticacion
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Esquema</th>
+        <th>Uso recomendado</th>
+        <th>Expiracion</th>
+        <th>Revocable</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">API Key</code></td>
+        <td>Scripts, CI/CD, servidor a servidor</td>
+        <td>No expira (rotacion manual)</td>
+        <td>Si — panel de control</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--green">Bearer Token (JWT)</code></td>
+        <td>Sesiones de usuario, SPAs</td>
+        <td>30 min - 1 hora</td>
+        <td>Si — via refresh revocation</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--purple">OAuth2 Code</code></td>
+        <td>Integraciones de terceros</td>
+        <td>1 hora (refresh: 30 dias)</td>
+        <td>Si — revocar autorizacion</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--yellow">OAuth2 Client Credentials</code></td>
+        <td>Comunicacion machine-to-machine</td>
+        <td>1 hora</td>
+        <td>Si — revocar client</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+### Gestion de API Keys
+
+Puedes crear y administrar tus API Keys desde el panel de control o via la propia API:
+
+```bash
+# Crear una nueva API Key con scope limitado
+curl -X POST https://api.cookbooks.dev/v1/api-keys \
+  -H "Authorization: Bearer sk_test_51Mz..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "CI/CD Pipeline",
+    "scopes": ["projects:read", "deployments:write"],
+    "expires_at": "2026-12-31T23:59:59Z"
+  }'
+```
+
+```json
+{
+  "id": "key_8fKz3mNpQr",
+  "name": "CI/CD Pipeline",
+  "key": "sk_live_nuevaClave4821...",
+  "scopes": ["projects:read", "deployments:write"],
+  "expires_at": "2026-12-31T23:59:59Z",
+  "created_at": "2026-02-22T10:00:00Z"
+}
+```
+
+<Callout type="warning" title="Seguridad de las claves">
+  La clave completa solo se muestra una vez al crearla. Guardala de forma segura
+  en un gestor de secretos (como Vault, AWS Secrets Manager o variables de entorno cifradas).
+  Si sospechas que una clave ha sido comprometida, rotala inmediatamente desde el panel de control.
+  Las claves antiguas expiraran tras 24 horas de gracia.
+</Callout>
+</section>
+
+<section id="endpoints-crud">
+<h2 class="doc-article__h2" id="endpoints-crud">Endpoints & CRUD <span class="doc-article__badge">Core</span></h2>
+
+La API sigue convenciones REST estandar. Todos los endpoints estan bajo el prefijo
+<code class="doc-inline-code doc-inline-code--cyan">/v1</code> y usan los verbos HTTP apropiados para cada operacion.
+
+### Referencia de recursos
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Metodo</th>
+        <th>Endpoint</th>
+        <th>Descripcion</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="doc-method">GET</span></td>
+        <td><code class="doc-inline-code doc-inline-code--cyan">/v1/projects</code></td>
+        <td>Listar proyectos con paginacion</td>
+        <td>200</td>
+      </tr>
+      <tr>
+        <td><span class="doc-method">POST</span></td>
+        <td><code class="doc-inline-code doc-inline-code--cyan">/v1/projects</code></td>
+        <td>Crear un nuevo proyecto</td>
+        <td>201</td>
+      </tr>
+      <tr>
+        <td><span class="doc-method">GET</span></td>
+        <td><code class="doc-inline-code doc-inline-code--cyan">/v1/projects/{'{id}'}</code></td>
+        <td>Obtener detalle de un proyecto</td>
+        <td>200</td>
+      </tr>
+      <tr>
+        <td><span class="doc-method">PATCH</span></td>
+        <td><code class="doc-inline-code doc-inline-code--cyan">/v1/projects/{'{id}'}</code></td>
+        <td>Actualizar campos de un proyecto</td>
+        <td>200</td>
+      </tr>
+      <tr>
+        <td><span class="doc-method">DELETE</span></td>
+        <td><code class="doc-inline-code doc-inline-code--cyan">/v1/projects/{'{id}'}</code></td>
+        <td>Eliminar un proyecto</td>
+        <td>204</td>
+      </tr>
+      <tr>
+        <td><span class="doc-method">GET</span></td>
+        <td><code class="doc-inline-code doc-inline-code--cyan">/v1/deployments</code></td>
+        <td>Historial de builds y estados</td>
+        <td>200</td>
+      </tr>
+      <tr>
+        <td><span class="doc-method">POST</span></td>
+        <td><code class="doc-inline-code doc-inline-code--cyan">/v1/deployments</code></td>
+        <td>Iniciar un nuevo despliegue</td>
+        <td>201</td>
+      </tr>
+      <tr>
+        <td><span class="doc-method">GET</span></td>
+        <td><code class="doc-inline-code doc-inline-code--cyan">/v1/teams</code></td>
+        <td>Listar equipos y miembros</td>
+        <td>200</td>
+      </tr>
+      <tr>
+        <td><span class="doc-method">PUT</span></td>
+        <td><code class="doc-inline-code doc-inline-code--cyan">/v1/teams/{'{id}'}</code></td>
+        <td>Actualizar un equipo completo</td>
+        <td>200</td>
+      </tr>
+      <tr>
+        <td><span class="doc-method">DELETE</span></td>
+        <td><code class="doc-inline-code doc-inline-code--cyan">/v1/teams/{'{id}'}</code></td>
+        <td>Eliminar un equipo</td>
+        <td>204</td>
+      </tr>
+      <tr>
+        <td><span class="doc-method">GET</span></td>
+        <td><code class="doc-inline-code doc-inline-code--cyan">/v1/webhooks</code></td>
+        <td>Listar webhooks configurados</td>
+        <td>200</td>
+      </tr>
+      <tr>
+        <td><span class="doc-method">POST</span></td>
+        <td><code class="doc-inline-code doc-inline-code--cyan">/v1/webhooks</code></td>
+        <td>Registrar un nuevo webhook</td>
+        <td>201</td>
+      </tr>
+      <tr>
+        <td><span class="doc-method">DELETE</span></td>
+        <td><code class="doc-inline-code doc-inline-code--cyan">/v1/webhooks/{'{id}'}</code></td>
+        <td>Eliminar un webhook</td>
+        <td>204</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+### GET — Listar recursos
+
+```bash
+# Listar proyectos con filtros y paginacion
+curl https://api.cookbooks.dev/v1/projects \
+  -H "Authorization: Bearer sk_test_51Mz..." \
+  -G \
+  -d "status=active" \
+  -d "sort=-created_at" \
+  -d "per_page=10" \
+  -d "page=1"
+```
+
+```json
+{
+  "data": [
+    {
+      "id": "proj_a1b2c3",
+      "name": "docs-website",
+      "status": "active",
+      "framework": "astro",
+      "created_at": "2026-01-15T08:30:00Z",
+      "updated_at": "2026-02-20T14:22:00Z",
+      "owner": {
+        "id": "usr_x9y8z7",
+        "email": "dev@cookbooks.dev"
+      }
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "per_page": 10,
+    "total": 42,
+    "total_pages": 5
+  }
+}
+```
+
+### POST — Crear un recurso
+
+```bash
+# Crear un nuevo proyecto
+curl -X POST https://api.cookbooks.dev/v1/projects \
+  -H "Authorization: Bearer sk_test_51Mz..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "mi-nuevo-proyecto",
+    "framework": "astro",
+    "description": "Documentación técnica del equipo",
+    "visibility": "private",
+    "settings": {
+      "build_command": "npm run build",
+      "output_dir": "dist",
+      "node_version": "20"
+    }
+  }'
+```
+
+```json
+{
+  "id": "proj_d4e5f6",
+  "name": "mi-nuevo-proyecto",
+  "framework": "astro",
+  "description": "Documentación técnica del equipo",
+  "visibility": "private",
+  "status": "initializing",
+  "settings": {
+    "build_command": "npm run build",
+    "output_dir": "dist",
+    "node_version": "20"
+  },
+  "created_at": "2026-02-22T10:00:00Z",
+  "updated_at": "2026-02-22T10:00:00Z"
+}
+```
+
+### PATCH — Actualizar parcialmente
+
+```bash
+# Actualizar solo el nombre y la descripcion
+curl -X PATCH https://api.cookbooks.dev/v1/projects/proj_d4e5f6 \
+  -H "Authorization: Bearer sk_test_51Mz..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "mi-proyecto-renombrado",
+    "description": "Descripción actualizada"
+  }'
+```
+
+<Callout type="info" title="PATCH vs PUT">
+  Usa <code>PATCH</code> para enviar solo los campos que cambian. Con <code>PUT</code> debes
+  enviar el recurso completo. La mayoria de nuestros endpoints aceptan <code>PATCH</code>
+  para actualizaciones parciales, que es lo mas comun en integraciones.
+</Callout>
+
+### DELETE — Eliminar un recurso
+
+```bash
+# Eliminar un proyecto (devuelve 204 sin body)
+curl -X DELETE https://api.cookbooks.dev/v1/projects/proj_d4e5f6 \
+  -H "Authorization: Bearer sk_test_51Mz..."
+```
+
+<Callout type="warning" title="Eliminacion irreversible">
+  Las operaciones DELETE son permanentes. Para recursos criticos como proyectos con
+  deployments activos, la API requiere confirmacion via el header
+  <code>X-Confirm-Delete: true</code>.
+</Callout>
+
+### Query parameters para filtrado y ordenamiento
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Parametro</th>
+        <th>Tipo</th>
+        <th>Ejemplo</th>
+        <th>Descripcion</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">page</code></td>
+        <td>integer</td>
+        <td><code>?page=2</code></td>
+        <td>Numero de pagina (desde 1)</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">per_page</code></td>
+        <td>integer</td>
+        <td><code>?per_page=25</code></td>
+        <td>Elementos por pagina (max 100)</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">sort</code></td>
+        <td>string</td>
+        <td><code>?sort=-created_at</code></td>
+        <td>Ordenar por campo. Prefijo <code>-</code> para descendente</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">status</code></td>
+        <td>string</td>
+        <td><code>?status=active</code></td>
+        <td>Filtrar por estado</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">search</code></td>
+        <td>string</td>
+        <td><code>?search=docs</code></td>
+        <td>Busqueda full-text en nombre y descripcion</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">created_after</code></td>
+        <td>ISO 8601</td>
+        <td><code>?created_after=2026-01-01</code></td>
+        <td>Filtrar por fecha de creacion</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">fields</code></td>
+        <td>string</td>
+        <td><code>?fields=id,name,status</code></td>
+        <td>Seleccionar campos especificos (sparse fieldsets)</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+</section>
+
+<section id="request-response-format">
+<h2 class="doc-article__h2" id="request-response-format">Request & Response Format <span class="doc-article__badge">Standard</span></h2>
+
+Todas las respuestas de la API siguen un formato envolvente (envelope) consistente. Esto facilita el parseo y la gestion de errores desde cualquier lenguaje.
+
+### Formato JSON envolvente
+
+Para **respuestas de listado** (colecciones):
+
+```json
+{
+  "data": [
+    { "id": "proj_a1b2c3", "name": "docs-website", "status": "active" },
+    { "id": "proj_d4e5f6", "name": "api-service", "status": "deploying" }
+  ],
+  "meta": {
+    "page": 1,
+    "per_page": 25,
+    "total": 42,
+    "total_pages": 2
+  },
+  "links": {
+    "self": "/v1/projects?page=1&per_page=25",
+    "next": "/v1/projects?page=2&per_page=25",
+    "last": "/v1/projects?page=2&per_page=25"
+  }
+}
+```
+
+Para **respuestas de recurso individual**:
+
+```json
+{
+  "data": {
+    "id": "proj_a1b2c3",
+    "name": "docs-website",
+    "status": "active",
+    "framework": "astro",
+    "created_at": "2026-01-15T08:30:00Z",
+    "updated_at": "2026-02-20T14:22:00Z"
+  }
+}
+```
+
+Para **respuestas de error** (ver seccion Error Handling para detalle completo):
+
+```json
+{
+  "error": {
+    "code": "validation_error",
+    "message": "El campo 'name' es obligatorio",
+    "status": 422,
+    "details": [
+      { "field": "name", "message": "Este campo no puede estar vacío" }
+    ],
+    "request_id": "req_7f8g9h0i"
+  }
+}
+```
+
+### Content Negotiation
+
+La API acepta y devuelve JSON por defecto. Debes incluir los headers apropiados:
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Header</th>
+        <th>Valor</th>
+        <th>Descripcion</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">Content-Type</code></td>
+        <td><code>application/json</code></td>
+        <td>Formato del body en requests POST/PATCH/PUT</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">Accept</code></td>
+        <td><code>application/json</code></td>
+        <td>Formato deseado de respuesta (defecto si se omite)</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">Accept-Encoding</code></td>
+        <td><code>gzip, deflate</code></td>
+        <td>Habilitar compresion en la respuesta</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">Authorization</code></td>
+        <td><code>Bearer {'{token}'}</code></td>
+        <td>Token de autenticacion</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--green">X-Request-Id</code></td>
+        <td><code>req_custom123</code></td>
+        <td>ID de correlacion personalizado (opcional)</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--green">X-Idempotency-Key</code></td>
+        <td><code>idem_abc456</code></td>
+        <td>Clave de idempotencia para POST (opcional)</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+### Compresion Gzip
+
+La API soporta compresion gzip para reducir el tamano de las respuestas. Las respuestas comprimidas pueden ser hasta un 80% mas pequenas:
+
+```bash
+# Peticion con compresion gzip
+curl https://api.cookbooks.dev/v1/projects \
+  -H "Authorization: Bearer sk_test_51Mz..." \
+  -H "Accept-Encoding: gzip" \
+  --compressed
+```
+
+```python
+import requests
+
+# requests descomprime gzip automaticamente
+response = requests.get(
+    "https://api.cookbooks.dev/v1/projects",
+    headers={
+        "Authorization": "Bearer sk_test_51Mz...",
+        "Accept-Encoding": "gzip",
+    },
+)
+# response.json() ya esta descomprimido
+print(f"Tamaño recibido: {len(response.content)} bytes")
+```
+
+### Headers de respuesta estandar
+
+Cada respuesta incluye headers utiles para debugging y paginacion:
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Header</th>
+        <th>Ejemplo</th>
+        <th>Descripcion</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">X-Request-Id</code></td>
+        <td><code>req_7f8g9h0i</code></td>
+        <td>ID unico de la peticion para soporte</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">X-RateLimit-Limit</code></td>
+        <td><code>1000</code></td>
+        <td>Peticiones permitidas en la ventana</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">X-RateLimit-Remaining</code></td>
+        <td><code>994</code></td>
+        <td>Peticiones restantes</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">X-RateLimit-Reset</code></td>
+        <td><code>1708617600</code></td>
+        <td>Timestamp Unix cuando se reinicia el limite</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--green">X-Total-Count</code></td>
+        <td><code>42</code></td>
+        <td>Total de elementos (en listados)</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--green">Link</code></td>
+        <td><code>&lt;/v1/projects?page=2&gt;; rel="next"</code></td>
+        <td>Links de navegacion (en listados)</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<Callout type="tip" title="X-Request-Id para soporte">
+  Siempre guarda el header <code>X-Request-Id</code> en tus logs. Cuando contactes a soporte,
+  proporciona este ID para que podamos rastrear tu peticion en nuestros sistemas de forma inmediata.
+</Callout>
+</section>
+
+<section id="error-handling">
+<h2 class="doc-article__h2" id="error-handling">Error Handling <span class="doc-article__badge">Critical</span></h2>
+
+La API usa codigos de estado HTTP estandar. Todo codigo en el rango
+<code class="doc-inline-code doc-inline-code--green">2xx</code> indica exito,
+<code class="doc-inline-code doc-inline-code--yellow">4xx</code> indica un error del cliente, y
+<code class="doc-inline-code doc-inline-code--pink">5xx</code> indica un error del servidor.
+
+### Referencia completa de codigos HTTP
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Codigo</th>
+        <th>Nombre</th>
+        <th>Descripcion</th>
+        <th>Accion recomendada</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--green">200</code></td>
+        <td>OK</td>
+        <td>Peticion exitosa</td>
+        <td>Procesar la respuesta normalmente</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--green">201</code></td>
+        <td>Created</td>
+        <td>Recurso creado exitosamente</td>
+        <td>Leer el recurso creado en el body</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--green">204</code></td>
+        <td>No Content</td>
+        <td>Operacion exitosa, sin body</td>
+        <td>No esperar body (ej. DELETE)</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--yellow">400</code></td>
+        <td>Bad Request</td>
+        <td>JSON malformado o parametros invalidos</td>
+        <td>Revisar el formato del request</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--yellow">401</code></td>
+        <td>Unauthorized</td>
+        <td>Token ausente, invalido o expirado</td>
+        <td>Verificar credenciales o renovar token</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--yellow">403</code></td>
+        <td>Forbidden</td>
+        <td>Sin permisos para este recurso</td>
+        <td>Verificar scopes del token y permisos del equipo</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--yellow">404</code></td>
+        <td>Not Found</td>
+        <td>Recurso no encontrado</td>
+        <td>Verificar ID del recurso y la URL</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--yellow">409</code></td>
+        <td>Conflict</td>
+        <td>Conflicto de estado (ej. duplicado)</td>
+        <td>Resolver el conflicto antes de reintentar</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--yellow">422</code></td>
+        <td>Unprocessable Entity</td>
+        <td>Validacion fallida en los datos enviados</td>
+        <td>Revisar los campos indicados en <code>details</code></td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--pink">429</code></td>
+        <td>Too Many Requests</td>
+        <td>Limite de rate limit excedido</td>
+        <td>Esperar segun el header <code>Retry-After</code></td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--pink">500</code></td>
+        <td>Internal Server Error</td>
+        <td>Error inesperado del servidor</td>
+        <td>Reintentar con backoff exponencial</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--pink">503</code></td>
+        <td>Service Unavailable</td>
+        <td>Servicio temporalmente no disponible</td>
+        <td>Reintentar tras <code>Retry-After</code> segundos</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+### Formato de error estandar
+
+Todos los errores siguen la misma estructura JSON:
+
+```json
+{
+  "error": {
+    "code": "validation_error",
+    "message": "Los datos enviados contienen errores de validación",
+    "status": 422,
+    "request_id": "req_7f8g9h0i",
+    "details": [
+      {
+        "field": "email",
+        "message": "Formato de email inválido",
+        "value": "no-es-un-email"
+      },
+      {
+        "field": "name",
+        "message": "Debe tener entre 3 y 100 caracteres",
+        "value": "ab"
+      }
+    ]
+  }
+}
+```
+
+### Estrategia de reintentos con backoff exponencial
+
+Para errores transitorios (429, 500, 503), implementa reintentos con backoff exponencial y jitter:
+
+```python
+import time
+import random
+import requests
+
+def request_with_retry(method, url, max_retries=5, **kwargs):
+    """
+    Realiza una peticion HTTP con reintentos automaticos
+    usando backoff exponencial + jitter.
+    """
+    retryable_codes = {429, 500, 502, 503, 504}
+
+    for attempt in range(max_retries):
+        response = requests.request(method, url, **kwargs)
+
+        if response.status_code not in retryable_codes:
+            return response
+
+        # Respetar Retry-After si viene en la respuesta
+        retry_after = response.headers.get("Retry-After")
+        if retry_after:
+            wait_time = int(retry_after)
+        else:
+            # Backoff exponencial: 1s, 2s, 4s, 8s, 16s + jitter
+            wait_time = min(2 ** attempt + random.uniform(0, 1), 30)
+
+        print(f"[Retry {attempt + 1}/{max_retries}] "
+              f"Status {response.status_code}. "
+              f"Esperando {wait_time:.1f}s...")
+        time.sleep(wait_time)
+
+    # Retornar la ultima respuesta si se agotan los reintentos
+    return response
+
+# Uso
+response = request_with_retry(
+    "GET",
+    "https://api.cookbooks.dev/v1/projects",
+    headers={"Authorization": "Bearer sk_test_51Mz..."},
+)
+```
+
+```javascript
+// Implementacion en JavaScript/Node.js
+async function fetchWithRetry(url, options = {}, maxRetries = 5) {
+  const retryableCodes = new Set([429, 500, 502, 503, 504]);
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const response = await fetch(url, options);
+
+    if (!retryableCodes.has(response.status)) {
+      return response;
+    }
+
+    const retryAfter = response.headers.get('Retry-After');
+    const waitTime = retryAfter
+      ? parseInt(retryAfter, 10) * 1000
+      : Math.min(2 ** attempt * 1000 + Math.random() * 1000, 30000);
+
+    console.log(
+      `[Retry ${attempt + 1}/${maxRetries}] ` +
+      `Status ${response.status}. Esperando ${waitTime}ms...`
+    );
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+
+  throw new Error(`Reintentos agotados tras ${maxRetries} intentos`);
+}
+
+// Uso
+const response = await fetchWithRetry(
+  'https://api.cookbooks.dev/v1/projects',
+  { headers: { Authorization: 'Bearer sk_test_51Mz...' } }
+);
+```
+
+<Callout type="warning" title="Idempotencia en reintentos">
+  Solo reintenta peticiones que sean seguras de repetir. Los <code>GET</code> siempre son
+  seguros. Para <code>POST</code>, usa el header
+  <code>X-Idempotency-Key</code> para evitar crear recursos duplicados al reintentar.
+</Callout>
+</section>
+
+<section id="pagination-filtering">
+<h2 class="doc-article__h2" id="pagination-filtering">Pagination & Filtering</h2>
+
+La API soporta dos modos de paginacion: **offset-based** (por defecto) y **cursor-based** (recomendado para datasets grandes). Ambos modos estan disponibles en todos los endpoints de listado.
+
+### Comparacion de estrategias de paginacion
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Caracteristica</th>
+        <th>Offset (page/per_page)</th>
+        <th>Cursor (after/before)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Salta a pagina arbitraria</td>
+        <td><code class="doc-inline-code doc-inline-code--green">Si</code></td>
+        <td><code class="doc-inline-code doc-inline-code--pink">No</code></td>
+      </tr>
+      <tr>
+        <td>Rendimiento con datos grandes</td>
+        <td><code class="doc-inline-code doc-inline-code--yellow">Degradado (OFFSET lento)</code></td>
+        <td><code class="doc-inline-code doc-inline-code--green">Constante (O(1))</code></td>
+      </tr>
+      <tr>
+        <td>Datos consistentes si hay inserciones</td>
+        <td><code class="doc-inline-code doc-inline-code--pink">No (puede saltar/duplicar)</code></td>
+        <td><code class="doc-inline-code doc-inline-code--green">Si</code></td>
+      </tr>
+      <tr>
+        <td>Total de elementos</td>
+        <td><code class="doc-inline-code doc-inline-code--green">Incluido en meta</code></td>
+        <td><code class="doc-inline-code doc-inline-code--yellow">Requiere has_more flag</code></td>
+      </tr>
+      <tr>
+        <td>Caso de uso ideal</td>
+        <td>UIs con numeros de pagina</td>
+        <td>Scroll infinito, exports, webhooks</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+### Paginacion offset-based
+
+```bash
+# Pagina 1, 25 elementos por pagina
+curl https://api.cookbooks.dev/v1/projects?page=1&per_page=25 \
+  -H "Authorization: Bearer sk_test_51Mz..."
+
+# Pagina 3
+curl https://api.cookbooks.dev/v1/projects?page=3&per_page=25 \
+  -H "Authorization: Bearer sk_test_51Mz..."
+```
+
+Respuesta con metadatos de paginacion:
+
+```json
+{
+  "data": [ "..." ],
+  "meta": {
+    "page": 1,
+    "per_page": 25,
+    "total": 142,
+    "total_pages": 6
+  },
+  "links": {
+    "self": "/v1/projects?page=1&per_page=25",
+    "first": "/v1/projects?page=1&per_page=25",
+    "next": "/v1/projects?page=2&per_page=25",
+    "last": "/v1/projects?page=6&per_page=25"
+  }
+}
+```
+
+### Paginacion cursor-based
+
+Para datasets grandes o cuando necesitas consistencia, usa paginacion por cursor:
+
+```bash
+# Primera peticion (sin cursor)
+curl https://api.cookbooks.dev/v1/projects?limit=25&sort=-created_at \
+  -H "Authorization: Bearer sk_test_51Mz..."
+
+# Siguiente pagina usando el cursor devuelto
+curl https://api.cookbooks.dev/v1/projects?limit=25&after=cur_eyJpZCI6MTAwfQ \
+  -H "Authorization: Bearer sk_test_51Mz..."
+```
+
+```json
+{
+  "data": [ "..." ],
+  "meta": {
+    "has_more": true,
+    "next_cursor": "cur_eyJpZCI6NzV9",
+    "previous_cursor": "cur_eyJpZCI6MTAwfQ"
+  }
+}
+```
+
+### Iterar todas las paginas con Python
+
+```python
+import requests
+
+def iter_all_projects(token):
+    """Itera todos los proyectos usando paginacion por cursor."""
+    url = "https://api.cookbooks.dev/v1/projects"
+    params = {"limit": 100, "sort": "-created_at"}
+    headers = {"Authorization": f"Bearer {token}"}
+
+    while True:
+        resp = requests.get(url, headers=headers, params=params)
+        resp.raise_for_status()
+        body = resp.json()
+
+        for project in body["data"]:
+            yield project
+
+        if not body["meta"].get("has_more"):
+            break
+
+        params["after"] = body["meta"]["next_cursor"]
+
+# Uso
+for project in iter_all_projects("sk_test_51Mz..."):
+    print(f"{project['id']}: {project['name']}")
+```
+
+### Navegacion con el header Link
+
+Los endpoints de listado incluyen el header
+<code class="doc-inline-code doc-inline-code--cyan">Link</code> siguiendo el estandar RFC 8288 para facilitar la navegacion:
+
+```text
+Link: <https://api.cookbooks.dev/v1/projects?page=2&per_page=25>; rel="next",
+      <https://api.cookbooks.dev/v1/projects?page=6&per_page=25>; rel="last",
+      <https://api.cookbooks.dev/v1/projects?page=1&per_page=25>; rel="first"
+```
+
+```javascript
+// Parsear el header Link en JavaScript
+function parseLinkHeader(header) {
+  if (!header) return {};
+  return header.split(',').reduce((acc, part) => {
+    const match = part.match(/<([^>]+)>;\s*rel="([^"]+)"/);
+    if (match) acc[match[2]] = match[1];
+    return acc;
+  }, {});
+}
+
+// Uso
+const links = parseLinkHeader(response.headers.get('Link'));
+if (links.next) {
+  const nextPage = await fetch(links.next, { headers });
+}
+```
+
+### Filtrado avanzado
+
+Combina multiples filtros en una sola peticion:
+
+```bash
+# Proyectos activos creados en 2026, framework Astro, ordenados por nombre
+curl -G https://api.cookbooks.dev/v1/projects \
+  -H "Authorization: Bearer sk_test_51Mz..." \
+  -d "status=active" \
+  -d "framework=astro" \
+  -d "created_after=2026-01-01T00:00:00Z" \
+  -d "created_before=2026-12-31T23:59:59Z" \
+  -d "sort=name" \
+  -d "fields=id,name,status,created_at" \
+  -d "per_page=50"
+```
+
+<Callout type="tip" title="Sparse fieldsets">
+  Usa el parametro <code>fields</code> para recibir solo los campos que necesitas.
+  Esto reduce el tamano de la respuesta y mejora los tiempos de transferencia,
+  especialmente util para listados grandes.
+</Callout>
+</section>
+
+<section id="rate-limiting">
+<h2 class="doc-article__h2" id="rate-limiting">Rate Limiting <span class="doc-article__badge">Important</span></h2>
+
+Limitamos las peticiones para asegurar la estabilidad del sistema y una experiencia justa para todos los usuarios. Usamos un algoritmo de **token bucket** que permite rafagas cortas por encima del limite promedio.
+
+### Niveles de rate limiting
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Plan</th>
+        <th>Limite por minuto</th>
+        <th>Burst maximo</th>
+        <th>Limite diario</th>
+        <th>Concurrencia maxima</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--yellow">Free</code></td>
+        <td>100 req/min</td>
+        <td>20 req/s</td>
+        <td>10,000 req/dia</td>
+        <td>5 conexiones</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">Pro</code></td>
+        <td>1,000 req/min</td>
+        <td>100 req/s</td>
+        <td>100,000 req/dia</td>
+        <td>25 conexiones</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--green">Business</code></td>
+        <td>5,000 req/min</td>
+        <td>500 req/s</td>
+        <td>1,000,000 req/dia</td>
+        <td>100 conexiones</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--purple">Enterprise</code></td>
+        <td>Personalizado</td>
+        <td>Personalizado</td>
+        <td>Sin limite</td>
+        <td>Personalizado</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+### Como funciona el Token Bucket
+
+El algoritmo de token bucket permite rafagas controladas. Imagina un cubo que se llena con tokens a una tasa constante:
+
+```text
+Algoritmo Token Bucket
+
+  Tokens se agregan a tasa constante (ej. 1000/min)
+          │
+          ▼
+  ┌───────────────┐
+  │  ○ ○ ○ ○ ○ ○  │ ← Bucket (capacidad maxima = burst)
+  │  ○ ○ ○ ○ ○ ○  │
+  │  ○ ○ ○ ○ ○    │   Cada peticion consume 1 token
+  └───────┬───────┘
+          │
+          ▼
+    Si hay tokens → Peticion permitida (200)
+    Si no hay     → Peticion rechazada (429)
+```
+
+### Headers de rate limiting
+
+Cada respuesta incluye informacion sobre tu cuota actual:
+
+```bash
+# Inspeccionar headers de rate limit
+curl -I https://api.cookbooks.dev/v1/projects \
+  -H "Authorization: Bearer sk_test_51Mz..."
+```
+
+```text
+HTTP/2 200
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 994
+X-RateLimit-Reset: 1708617600
+Retry-After: 42
+```
+
+### Manejar rate limiting correctamente
+
+Si excedes el limite, recibiras un codigo de estado
+<code class="doc-inline-code doc-inline-code--pink">429 Too Many Requests</code>.
+La respuesta incluira el header
+<code class="doc-inline-code doc-inline-code--cyan">Retry-After</code> indicando cuantos segundos esperar:
+
+```javascript
+class APIClient {
+  constructor(token) {
+    this.token = token;
+    this.baseURL = 'https://api.cookbooks.dev/v1';
+  }
+
+  async request(method, path, body = null) {
+    const url = `${this.baseURL}${path}`;
+    const options = {
+      method,
+      headers: {
+        'Authorization': `Bearer ${this.token}`,
+        'Content-Type': 'application/json',
+      },
+    };
+    if (body) options.body = JSON.stringify(body);
+
+    const response = await fetch(url, options);
+
+    // Logging de cuota para monitoreo
+    const remaining = response.headers.get('X-RateLimit-Remaining');
+    const limit = response.headers.get('X-RateLimit-Limit');
+    console.log(`Rate limit: ${remaining}/${limit}`);
+
+    // Manejar rate limit
+    if (response.status === 429) {
+      const retryAfter = parseInt(
+        response.headers.get('Retry-After') || '5', 10
+      );
+      console.warn(`Rate limited. Reintentando en ${retryAfter}s...`);
+      await new Promise(r => setTimeout(r, retryAfter * 1000));
+      return this.request(method, path, body);  // Reintentar
+    }
+
+    return response;
+  }
+}
+```
+
+### Patron Circuit Breaker
+
+Para proteger tu aplicacion cuando la API tiene problemas sostenidos, implementa un circuit breaker:
+
+```python
+import time
+
+class CircuitBreaker:
+    """
+    Patron Circuit Breaker para proteger contra fallos en cascada.
+
+    Estados:
+    - CLOSED:    Todo funciona, las peticiones pasan normalmente.
+    - OPEN:      Demasiados fallos, las peticiones se rechazan inmediatamente.
+    - HALF_OPEN: Periodo de prueba, se permite una peticion para verificar.
+    """
+
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+    def __init__(self, failure_threshold=5, recovery_timeout=60):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.state = self.CLOSED
+        self.failure_count = 0
+        self.last_failure_time = None
+
+    def can_execute(self):
+        if self.state == self.CLOSED:
+            return True
+        if self.state == self.OPEN:
+            if time.time() - self.last_failure_time >= self.recovery_timeout:
+                self.state = self.HALF_OPEN
+                return True
+            return False
+        # HALF_OPEN: permitir una peticion de prueba
+        return True
+
+    def record_success(self):
+        self.failure_count = 0
+        self.state = self.CLOSED
+
+    def record_failure(self):
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        if self.failure_count >= self.failure_threshold:
+            self.state = self.OPEN
+
+# Uso con la API
+breaker = CircuitBreaker(failure_threshold=5, recovery_timeout=60)
+
+def safe_api_call(url, headers):
+    if not breaker.can_execute():
+        raise Exception("Circuit breaker OPEN: API no disponible")
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code >= 500:
+            breaker.record_failure()
+            raise Exception(f"Server error: {resp.status_code}")
+        breaker.record_success()
+        return resp
+    except requests.exceptions.Timeout:
+        breaker.record_failure()
+        raise
+```
+
+<Callout type="info" title="Monitorea tu cuota">
+  Configura alertas cuando <code>X-RateLimit-Remaining</code> caiga por debajo del 20%
+  de tu limite. Esto te dara tiempo de reaccionar antes de empezar a recibir errores 429.
+</Callout>
+</section>
+
+<section id="webhooks">
+<h2 class="doc-article__h2" id="webhooks">Webhooks <span class="doc-article__badge">Events</span></h2>
+
+Los webhooks te permiten recibir notificaciones en tiempo real cuando ocurren eventos en tu cuenta. En vez de hacer polling, la API envia un
+<code class="doc-inline-code doc-inline-code--cyan">POST</code> a tu URL con los detalles del evento.
+
+### Registrar un webhook
+
+```bash
+curl -X POST https://api.cookbooks.dev/v1/webhooks \
+  -H "Authorization: Bearer sk_test_51Mz..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://tuapp.com/api/webhooks/cookbooks",
+    "events": [
+      "project.created",
+      "project.updated",
+      "deployment.completed",
+      "deployment.failed"
+    ],
+    "secret": "whsec_tu_secreto_para_verificar_firmas"
+  }'
+```
+
+```json
+{
+  "id": "wh_k1l2m3n4",
+  "url": "https://tuapp.com/api/webhooks/cookbooks",
+  "events": [
+    "project.created",
+    "project.updated",
+    "deployment.completed",
+    "deployment.failed"
+  ],
+  "status": "active",
+  "created_at": "2026-02-22T10:00:00Z"
+}
+```
+
+### Eventos disponibles
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Evento</th>
+        <th>Descripcion</th>
+        <th>Payload clave</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">project.created</code></td>
+        <td>Nuevo proyecto creado</td>
+        <td>project object</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">project.updated</code></td>
+        <td>Proyecto modificado</td>
+        <td>project object + changes</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--cyan">project.deleted</code></td>
+        <td>Proyecto eliminado</td>
+        <td>project id</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--green">deployment.started</code></td>
+        <td>Despliegue iniciado</td>
+        <td>deployment object</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--green">deployment.completed</code></td>
+        <td>Despliegue exitoso</td>
+        <td>deployment object + url</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--pink">deployment.failed</code></td>
+        <td>Despliegue fallido</td>
+        <td>deployment object + error</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--yellow">team.member_added</code></td>
+        <td>Nuevo miembro en el equipo</td>
+        <td>team id + user object</td>
+      </tr>
+      <tr>
+        <td><code class="doc-inline-code doc-inline-code--yellow">team.member_removed</code></td>
+        <td>Miembro eliminado del equipo</td>
+        <td>team id + user id</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+### Formato del payload
+
+Cada webhook envia un POST con el siguiente formato JSON:
+
+```json
+{
+  "id": "evt_p5q6r7s8",
+  "type": "deployment.completed",
+  "created_at": "2026-02-22T10:05:00Z",
+  "data": {
+    "id": "dpl_t9u0v1w2",
+    "project_id": "proj_a1b2c3",
+    "status": "success",
+    "url": "https://docs-website.cookbooks.dev",
+    "commit_sha": "a1b2c3d4",
+    "duration_seconds": 45
+  }
+}
+```
+
+### Verificacion de firma con HMAC-SHA256
+
+Cada peticion de webhook incluye el header
+<code class="doc-inline-code doc-inline-code--cyan">X-Cookbooks-Signature</code> que debes verificar para asegurar que la peticion proviene de nuestra API y no ha sido alterada:
+
+```python
+import hmac
+import hashlib
+from flask import Flask, request, abort
+
+app = Flask(__name__)
+WEBHOOK_SECRET = "whsec_tu_secreto_para_verificar_firmas"
+
+def verify_signature(payload_body, signature_header):
+    """Verifica la firma HMAC-SHA256 del webhook."""
+    expected = hmac.new(
+        key=WEBHOOK_SECRET.encode("utf-8"),
+        msg=payload_body,
+        digestmod=hashlib.sha256,
+    ).hexdigest()
+
+    received = signature_header.replace("sha256=", "")
+    return hmac.compare_digest(expected, received)
+
+@app.route("/api/webhooks/cookbooks", methods=["POST"])
+def handle_webhook():
+    signature = request.headers.get("X-Cookbooks-Signature", "")
+
+    if not verify_signature(request.data, signature):
+        abort(401, "Firma invalida")
+
+    event = request.json
+    event_type = event["type"]
+
+    # Procesar segun el tipo de evento
+    if event_type == "deployment.completed":
+        handle_deployment_completed(event["data"])
+    elif event_type == "deployment.failed":
+        handle_deployment_failed(event["data"])
+    elif event_type == "project.created":
+        handle_project_created(event["data"])
+
+    # Responder 200 rapidamente para confirmar recepcion
+    return {"received": True}, 200
+```
+
+```javascript
+// Verificacion en Node.js (Express)
+const crypto = require('crypto');
+const express = require('express');
+const app = express();
+
+const WEBHOOK_SECRET = 'whsec_tu_secreto_para_verificar_firmas';
+
+app.post('/api/webhooks/cookbooks',
+  express.raw({ type: 'application/json' }),
+  (req, res) => {
+    const signature = req.headers['x-cookbooks-signature'] || '';
+    const expected = 'sha256=' + crypto
+      .createHmac('sha256', WEBHOOK_SECRET)
+      .update(req.body)
+      .digest('hex');
+
+    if (!crypto.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(expected)
+    )) {
+      return res.status(401).json({ error: 'Firma invalida' });
+    }
+
+    const event = JSON.parse(req.body);
+    console.log(`Evento recibido: ${event.type}`);
+
+    // Procesar de forma asincrona (no bloquear la respuesta)
+    processEvent(event).catch(console.error);
+
+    res.json({ received: true });
+  }
+);
+```
+
+### Politica de reintentos de webhooks
+
+Si tu endpoint no responde con un codigo
+<code class="doc-inline-code doc-inline-code--green">2xx</code> dentro de **10 segundos**, reintentaremos la entrega con el siguiente calendario:
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Intento</th>
+        <th>Espera</th>
+        <th>Tiempo acumulado</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1 (original)</td>
+        <td>Inmediato</td>
+        <td>0 min</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>1 minuto</td>
+        <td>1 min</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>5 minutos</td>
+        <td>6 min</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>30 minutos</td>
+        <td>36 min</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>2 horas</td>
+        <td>~2.5 horas</td>
+      </tr>
+      <tr>
+        <td>6 (ultimo)</td>
+        <td>8 horas</td>
+        <td>~10.5 horas</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+### Idempotencia en webhooks
+
+Cada evento incluye un
+<code class="doc-inline-code doc-inline-code--cyan">id</code> unico. Dado que un mismo evento puede entregarse mas de una vez (por reintentos), tu handler debe ser idempotente:
+
+```python
+# Ejemplo: usar Redis para deduplicar eventos
+import redis
+
+r = redis.Redis()
+
+def handle_webhook(event):
+    event_id = event["id"]
+
+    # Verificar si ya procesamos este evento
+    if r.get(f"webhook:processed:{event_id}"):
+        print(f"Evento {event_id} ya procesado, ignorando duplicado")
+        return {"received": True}
+
+    # Procesar el evento
+    process_event(event)
+
+    # Marcar como procesado (TTL de 7 dias)
+    r.set(f"webhook:processed:{event_id}", "1", ex=604800)
+
+    return {"received": True}
+```
+
+<Callout type="tip" title="Responde rapido, procesa despues">
+  Tu endpoint de webhook debe responder con <code>200</code> lo mas rapido posible
+  (idealmente en menos de 5 segundos). Si necesitas procesamiento pesado,
+  encola el evento y procesalo en un worker en segundo plano.
+</Callout>
+</section>
+
+<section id="sdk-client-generation">
+<h2 class="doc-article__h2" id="sdk-client-generation">SDK & Client Generation <span class="doc-article__badge">Tools</span></h2>
+
+Nuestra API publica una especificacion OpenAPI 3.1 completa que puedes usar para generar clientes automaticamente en cualquier lenguaje. Tambien proporcionamos SDKs oficiales para Python y TypeScript.
+
+### Especificacion OpenAPI
+
+La especificacion esta disponible en formato JSON y YAML:
+
+```bash
+# Descargar la especificacion OpenAPI
+curl https://api.cookbooks.dev/v1/openapi.json -o openapi.json
+
+# O en formato YAML
+curl https://api.cookbooks.dev/v1/openapi.yaml -o openapi.yaml
+
+# Validar la especificacion localmente
+npx @redocly/cli lint openapi.json
+```
+
+### SDK oficial de Python
+
+```bash
+pip install cookbooks-sdk
+```
+
+```python
+from cookbooks import CookbooksClient
+
+# Inicializar el cliente
+client = CookbooksClient(
+    api_key="sk_test_51Mz...",
+    base_url="https://api.cookbooks.dev/v1",  # Opcional
+    timeout=30,     # Timeout en segundos
+    max_retries=3,  # Reintentos automaticos
+)
+
+# --- Proyectos ---
+
+# Listar proyectos con filtros
+projects = client.projects.list(
+    status="active",
+    sort="-created_at",
+    per_page=50,
+)
+for project in projects:
+    print(f"{project.id}: {project.name}")
+
+# Crear un proyecto
+new_project = client.projects.create(
+    name="api-docs",
+    framework="astro",
+    visibility="private",
+    settings={
+        "build_command": "npm run build",
+        "output_dir": "dist",
+    },
+)
+print(f"Proyecto creado: {new_project.id}")
+
+# Actualizar un proyecto
+updated = client.projects.update(
+    "proj_a1b2c3",
+    name="api-docs-v2",
+    description="Documentacion actualizada",
+)
+
+# Eliminar un proyecto
+client.projects.delete("proj_a1b2c3")
+
+# --- Deployments ---
+
+# Listar deployments de un proyecto
+deployments = client.deployments.list(project_id="proj_a1b2c3")
+
+# Iniciar un nuevo deployment
+deploy = client.deployments.create(
+    project_id="proj_a1b2c3",
+    branch="main",
+)
+print(f"Deployment: {deploy.id} — Status: {deploy.status}")
+
+# --- Manejo de errores ---
+from cookbooks.exceptions import (
+    NotFoundError,
+    RateLimitError,
+    ValidationError,
+)
+
+try:
+    project = client.projects.get("proj_inexistente")
+except NotFoundError:
+    print("Proyecto no encontrado")
+except RateLimitError as e:
+    print(f"Rate limited. Reintentar en {e.retry_after}s")
+except ValidationError as e:
+    print(f"Error de validacion: {e.details}")
+```
+
+### SDK oficial de TypeScript/JavaScript
+
+```bash
+npm install @cookbooks/sdk
+```
+
+```javascript
+import { CookbooksClient } from '@cookbooks/sdk';
+
+// Inicializar el cliente
+const client = new CookbooksClient({
+  apiKey: 'sk_test_51Mz...',
+  timeout: 30000,   // Timeout en ms
+  maxRetries: 3,    // Reintentos automaticos
+});
+
+// Listar proyectos
+const { data: projects, meta } = await client.projects.list({
+  status: 'active',
+  sort: '-created_at',
+  perPage: 50,
+});
+
+console.log(`Total: ${meta.total} proyectos`);
+projects.forEach(p => console.log(`${p.id}: ${p.name}`));
+
+// Crear un proyecto
+const newProject = await client.projects.create({
+  name: 'api-docs',
+  framework: 'astro',
+  visibility: 'private',
+  settings: {
+    buildCommand: 'npm run build',
+    outputDir: 'dist',
+  },
+});
+
+// Actualizar un proyecto
+const updated = await client.projects.update('proj_a1b2c3', {
+  name: 'api-docs-v2',
+});
+
+// Eliminar un proyecto
+await client.projects.delete('proj_a1b2c3');
+
+// Manejo de errores con tipos
+import {
+  NotFoundError,
+  RateLimitError,
+  ValidationError,
+} from '@cookbooks/sdk';
+
+try {
+  const project = await client.projects.get('proj_inexistente');
+} catch (error) {
+  if (error instanceof NotFoundError) {
+    console.log('Proyecto no encontrado');
+  } else if (error instanceof RateLimitError) {
+    console.log(`Reintentar en ${error.retryAfter}s`);
+  } else if (error instanceof ValidationError) {
+    console.log('Errores:', error.details);
+  }
+}
+```
+
+### Generar clientes con OpenAPI Generator
+
+Si prefieres otro lenguaje, genera un cliente automaticamente desde la especificacion OpenAPI:
+
+```bash
+# Instalar OpenAPI Generator
+npm install -g @openapitools/openapi-generator-cli
+
+# Generar cliente en Go
+openapi-generator-cli generate \
+  -i https://api.cookbooks.dev/v1/openapi.json \
+  -g go \
+  -o ./cookbooks-go-client \
+  --additional-properties=packageName=cookbooks
+
+# Generar cliente en Java
+openapi-generator-cli generate \
+  -i https://api.cookbooks.dev/v1/openapi.json \
+  -g java \
+  -o ./cookbooks-java-client \
+  --additional-properties=artifactId=cookbooks-client
+
+# Generar cliente en Rust
+openapi-generator-cli generate \
+  -i https://api.cookbooks.dev/v1/openapi.json \
+  -g rust \
+  -o ./cookbooks-rust-client
+```
+
+### Coleccion de Postman
+
+Importa nuestra coleccion de Postman para explorar y probar la API de forma interactiva:
+
+```bash
+# Descargar la coleccion de Postman
+curl https://api.cookbooks.dev/v1/postman-collection.json \
+  -o cookbooks-postman-collection.json
+```
+
+Tambien puedes importarla directamente en Postman usando esta URL:
+
+```text
+https://api.cookbooks.dev/v1/postman-collection.json
+```
+
+La coleccion incluye:
+- Todos los endpoints organizados por recurso
+- Variables de entorno preconfiguradas (`base_url`, `api_key`)
+- Ejemplos de request y response para cada operacion
+- Scripts de pre-request para autenticacion automatica
+- Tests automaticos para validar respuestas
+
+<Callout type="info" title="Documentacion interactiva">
+  Ademas de Postman, puedes explorar la API directamente en tu navegador visitando
+  <code>https://api.cookbooks.dev/docs</code> (Swagger UI) o
+  <code>https://api.cookbooks.dev/redoc</code> (ReDoc).
+  Ambas interfaces se generan automaticamente desde la especificacion OpenAPI.
+</Callout>
+</section>

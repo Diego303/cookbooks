@@ -1,0 +1,668 @@
+---
+title: "Apache Airflow"
+description: "Orquestación de workflows con Apache Airflow: DAGs, operadores, despliegue en contenedores y patrones de producción."
+intro: "Guía de orquestación de workflows con Apache Airflow. Cubre la arquitectura del sistema, definición de DAGs, operadores, conexiones, despliegue en contenedores y patrones de producción."
+category: "DEVOPS"
+categoryColor: "yellow"
+icon: "wind"
+tags: ["Airflow", "DAGs", "Orchestration"]
+breadcrumb: ["Docs", "DevOps", "Apache Airflow"]
+order: 7
+toc:
+  - { id: "airflow-architecture", label: "Arquitectura" }
+  - { id: "dags-tasks", label: "DAGs & Tasks" }
+  - { id: "operators-hooks", label: "Operators & Hooks" }
+  - { id: "docker-deployment", label: "Despliegue con Docker" }
+  - { id: "production-patterns", label: "Patrones de Producción" }
+  - { id: "xcoms-data", label: "XComs & Data Passing" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="airflow-architecture">
+<h2 class="doc-article__h2" id="airflow-architecture">Arquitectura</h2>
+
+Airflow es un **orquestador de workflows programáticos** que define pipelines como código Python (DAGs). Sus componentes principales son el Scheduler, Webserver, Workers y la base de datos de metadatos.
+
+```text
+Arquitectura de Apache Airflow
+
+┌─────────────────────────────────────────────────────────────┐
+│                    Airflow Cluster                          │
+│                                                             │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
+│  │  Webserver   │    │  Scheduler   │    │  Triggerer   │  │
+│  │              │    │              │    │              │  │
+│  │  UI Dashboard│    │  Parsea DAGs │    │  Deferrable  │  │
+│  │  REST API    │    │  Asigna tasks│    │  Operators   │  │
+│  │  Auth/RBAC   │    │  Heartbeats  │    │              │  │
+│  └──────┬───────┘    └──────┬───────┘    └──────────────┘  │
+│         │                   │                               │
+│  ┌──────▼───────────────────▼────────────────────────────┐  │
+│  │              Metadata Database (PostgreSQL)             │  │
+│  │  DAG runs · Task instances · Variables · Connections  │  │
+│  └───────────────────────────────────────────────────────┘  │
+│                          │                                  │
+│  ┌───────────────────────▼───────────────────────────────┐  │
+│  │              Executor                                  │  │
+│  │                                                       │  │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐            │  │
+│  │  │ Worker 1 │  │ Worker 2 │  │ Worker N │            │  │
+│  │  │ (Celery) │  │ (Celery) │  │ (K8s Pod)│            │  │
+│  │  └──────────┘  └──────────┘  └──────────┘            │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Executor</th><th>Descripción</th><th>Caso de uso</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>**LocalExecutor**</td><td>Ejecuta tasks en subprocesos locales</td><td>Desarrollo, cargas pequeñas</td></tr>
+      <tr><td>**CeleryExecutor**</td><td>Distribuye tasks via Celery + Redis/RabbitMQ</td><td>Producción con carga media</td></tr>
+      <tr><td>**KubernetesExecutor**</td><td>Cada task es un Pod de Kubernetes</td><td>Producción, aislamiento total</td></tr>
+    </tbody>
+  </table>
+</div>
+</section>
+
+<section id="dags-tasks">
+<h2 class="doc-article__h2" id="dags-tasks">DAGs & Tasks</h2>
+
+Un **DAG** (Directed Acyclic Graph) define un workflow como un grafo de tareas con dependencias. Se escribe en Python puro.
+
+```python
+from datetime import datetime, timedelta
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.operators.bash import BashOperator
+from airflow.utils.task_group import TaskGroup
+
+# ── Configuración del DAG ──
+default_args = {
+    "owner": "data-team",
+    "retries": 3,
+    "retry_delay": timedelta(minutes=5),
+    "email_on_failure": True,
+    "email": ["alerts@company.com"],
+}
+
+with DAG(
+    dag_id="etl_daily_pipeline",
+    description="Pipeline ETL diario: extrae, transforma y carga datos",
+    schedule="0 6 * * *",           # Cada día a las 6:00 UTC
+    start_date=datetime(2024, 1, 1),
+    catchup=False,                   # No ejecutar runs pasados
+    default_args=default_args,
+    tags=["etl", "production"],
+) as dag:
+
+    # ── Extract ──
+    extract = PythonOperator(
+        task_id="extract_data",
+        python_callable=extract_from_api,
+        op_kwargs={"source": "production_db"},
+    )
+
+    # ── Transform (grupo de tareas paralelas) ──
+    with TaskGroup(group_id="transform") as transform_group:
+        clean = PythonOperator(
+            task_id="clean_data",
+            python_callable=clean_records,
+        )
+        enrich = PythonOperator(
+            task_id="enrich_data",
+            python_callable=enrich_with_geo,
+        )
+        validate = PythonOperator(
+            task_id="validate_schema",
+            python_callable=validate_output,
+        )
+        [clean, enrich] >> validate
+
+    # ── Load ──
+    load = PythonOperator(
+        task_id="load_to_warehouse",
+        python_callable=load_to_bigquery,
+    )
+
+    # ── Notify ──
+    notify = BashOperator(
+        task_id="send_notification",
+        bash_command='curl -X POST $SLACK_WEBHOOK -d \'{"text":"ETL completado"}\'',
+    )
+
+    # ── Dependencias ──
+    extract >> transform_group >> load >> notify
+```
+</section>
+
+<section id="operators-hooks">
+<h2 class="doc-article__h2" id="operators-hooks">Operators & Hooks</h2>
+
+Los **Operators** encapsulan tipos de trabajo. Los **Hooks** gestionan conexiones a servicios externos. Airflow tiene operadores para casi cualquier servicio cloud.
+
+```python
+from airflow.providers.docker.operators.docker import DockerOperator
+from airflow.providers.http.operators.http import SimpleHttpOperator
+from airflow.providers.postgres.operators.postgres import PostgresOperator
+from airflow.sensors.external_task import ExternalTaskSensor
+
+# ── DockerOperator: ejecutar contenedor ──
+run_model = DockerOperator(
+    task_id="train_model",
+    image="ml-training:latest",
+    command="python train.py --epochs 50",
+    docker_url="unix:///var/run/docker.sock",
+    network_mode="bridge",
+    auto_remove=True,
+    environment={
+        "MLFLOW_TRACKING_URI": "http://mlflow:5000",
+    },
+)
+
+# ── PostgresOperator: ejecutar SQL ──
+create_table = PostgresOperator(
+    task_id="create_staging_table",
+    postgres_conn_id="warehouse_db",
+    sql="""
+    CREATE TABLE IF NOT EXISTS staging.daily_metrics (
+        date DATE PRIMARY KEY,
+        users_active INT,
+        revenue DECIMAL(10,2),
+        processed_at TIMESTAMP DEFAULT NOW()
+    );
+    """,
+)
+
+# ── Sensor: esperar a que otro DAG termine ──
+wait_for_upstream = ExternalTaskSensor(
+    task_id="wait_for_ingestion",
+    external_dag_id="data_ingestion",
+    external_task_id="final_check",
+    timeout=3600,       # 1 hora máximo de espera
+    mode="reschedule",  # Libera el worker mientras espera
+)
+```
+
+<Callout type="tip" title="Deferrable Operators">
+  Usa **Deferrable Operators** (asyncio-based) para tareas
+  que esperan eventos externos. Liberan el worker slot mientras esperan,
+  permitiendo mayor concurrencia con menos recursos.
+</Callout>
+</section>
+
+<section id="docker-deployment">
+<h2 class="doc-article__h2" id="docker-deployment">Despliegue con Docker</h2>
+
+Airflow se despliega fácilmente con **Docker Compose**, ideal para desarrollo y equipos pequeños. Para producción, se recomienda Kubernetes con el Helm chart oficial.
+
+```yaml
+# docker-compose.yml — Airflow con CeleryExecutor
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.0
+  environment:
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+    AIRFLOW__WEBSERVER__SECRET_KEY: 'change-me-in-production'
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+  depends_on:
+    - postgres
+    - redis
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+
+  webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+
+  scheduler:
+    <<: *airflow-common
+    command: scheduler
+
+  worker:
+    <<: *airflow-common
+    command: celery worker
+    deploy:
+      replicas: 2
+
+volumes:
+  postgres-data:
+```
+
+```bash
+# Inicializar y arrancar
+docker compose up airflow-init    # Crea DB + usuario admin
+docker compose up -d              # Arrancar todos los servicios
+
+# Acceder al UI
+# http://localhost:8080 (user: airflow, pass: airflow)
+
+# CLI útil
+docker compose exec webserver airflow dags list
+docker compose exec webserver airflow tasks test etl_daily_pipeline extract_data 2024-01-01
+```
+</section>
+
+<section id="production-patterns">
+<h2 class="doc-article__h2" id="production-patterns">Patrones de Producción</h2>
+
+Patrones esenciales para operar Airflow en producción: idempotencia, gestión de secrets, alertas y testing de DAGs.
+
+```python
+from airflow.models import Variable
+from airflow.hooks.base import BaseHook
+
+# ── Variables y Secrets (nunca hardcodear) ──
+api_key = Variable.get("api_key", deserialize_json=False)
+db_conn = BaseHook.get_connection("warehouse_db")
+
+# ── DAG idempotente: usar execution_date ──
+def extract_data(**context):
+    # Siempre usar logical_date para idempotencia
+    execution_date = context["logical_date"]
+    data = api.fetch(
+        start=execution_date,
+        end=execution_date + timedelta(days=1),
+    )
+    # Guardar con partición por fecha
+    save_to_s3(
+        data,
+        key=f"raw/{execution_date.strftime('%Y-%m-%d')}/data.parquet",
+    )
+
+# ── Testing de DAGs ──
+import pytest
+from airflow.models import DagBag
+
+def test_dag_integrity():
+    """Verificar que todos los DAGs se parsean sin errores."""
+    dag_bag = DagBag(include_examples=False)
+    assert len(dag_bag.import_errors) == 0, (
+        f"Errores de importación: {dag_bag.import_errors}"
+    )
+
+def test_dag_has_tags():
+    """Todo DAG debe tener al menos un tag."""
+    dag_bag = DagBag(include_examples=False)
+    for dag_id, dag in dag_bag.dags.items():
+        assert dag.tags, f"{dag_id} no tiene tags"
+```
+
+<Callout type="warning" title="Idempotencia obligatoria">
+  Todo DAG debe ser **idempotente**: ejecutar el mismo
+  DAG run dos veces debe producir el mismo resultado. Usa
+  `logical_date` para particionar datos y evita side effects
+  no controlados.
+</Callout>
+</section>
+
+<section id="xcoms-data">
+<h2 class="doc-article__h2" id="xcoms-data">XComs & Data Passing</h2>
+
+Los **XComs** (Cross-Communications) permiten que las tareas de un DAG
+intercambien pequenos datos entre si. Son el mecanismo nativo de Airflow
+para pasar resultados de una tarea a la siguiente sin usar almacenamiento
+externo.
+
+```text
+Flujo de XComs entre tareas
+
+  Task A                    XCom Backend                  Task B
+    │                           │                            │
+    │  xcom_push(key, value)    │                            │
+    ├──────────────────────────▶│  Almacena en               │
+    │                           │  metadata DB               │
+    │                           │                            │
+    │                           │  xcom_pull(task_id, key)   │
+    │                           │◀───────────────────────────┤
+    │                           ├───────────────────────────▶│
+    │                           │  Retorna value             │
+    │                           │                            │
+```
+
+### XCom push/pull clasico
+
+```python
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from datetime import datetime
+
+def extract_data(**context):
+    """Extraer datos y enviarlos via XCom."""
+    records = [
+        {"id": 1, "name": "Alice", "score": 95},
+        {"id": 2, "name": "Bob", "score": 87},
+        {"id": 3, "name": "Carol", "score": 92},
+    ]
+    # Push explicito con clave personalizada
+    context["ti"].xcom_push(key="extracted_records", value=records)
+    context["ti"].xcom_push(key="record_count", value=len(records))
+
+def transform_data(**context):
+    """Leer datos de la tarea anterior y transformarlos."""
+    ti = context["ti"]
+
+    # Pull explicito por task_id y key
+    records = ti.xcom_pull(task_ids="extract", key="extracted_records")
+    count = ti.xcom_pull(task_ids="extract", key="record_count")
+
+    print(f"Procesando {count} registros")
+
+    # Transformar: filtrar scores > 90
+    top_records = [r for r in records if r["score"] > 90]
+
+    # Push del resultado transformado
+    ti.xcom_push(key="top_records", value=top_records)
+
+def load_data(**context):
+    """Cargar los datos transformados."""
+    top_records = context["ti"].xcom_pull(
+        task_ids="transform",
+        key="top_records",
+    )
+    for record in top_records:
+        print(f"Cargando: {record['name']} (score: {record['score']})")
+
+with DAG(
+    dag_id="xcom_classic_example",
+    schedule="@daily",
+    start_date=datetime(2024, 1, 1),
+    catchup=False,
+) as dag:
+
+    extract = PythonOperator(
+        task_id="extract",
+        python_callable=extract_data,
+    )
+    transform = PythonOperator(
+        task_id="transform",
+        python_callable=transform_data,
+    )
+    load = PythonOperator(
+        task_id="load",
+        python_callable=load_data,
+    )
+
+    extract >> transform >> load
+```
+
+### TaskFlow API con @task decorator
+
+La **TaskFlow API** (Airflow 2.0+) simplifica drasticamente el uso de XComs.
+Los valores de retorno de funciones decoradas con `@task` se pasan
+automaticamente como XComs, sin necesidad de `push`/`pull` explicito.
+
+```python
+from airflow.decorators import dag, task
+from datetime import datetime, timedelta
+import json
+
+@dag(
+    dag_id="taskflow_etl_pipeline",
+    description="ETL con TaskFlow API — XCom implicito",
+    schedule="0 8 * * *",
+    start_date=datetime(2024, 1, 1),
+    catchup=False,
+    default_args={
+        "owner": "data-team",
+        "retries": 2,
+        "retry_delay": timedelta(minutes=3),
+    },
+    tags=["etl", "taskflow"],
+)
+def taskflow_etl():
+
+    @task()
+    def extract(source: str) -> dict:
+        """Extraer datos de la fuente. El return se convierte en XCom."""
+        import requests
+        response = requests.get(f"https://api.example.com/{source}/data")
+        data = response.json()
+        return {
+            "records": data["items"],
+            "total": data["total"],
+            "source": source,
+        }
+
+    @task()
+    def validate(extracted: dict) -> dict:
+        """Validar datos extraidos. Recibe XCom automaticamente."""
+        records = extracted["records"]
+        valid = [r for r in records if r.get("id") and r.get("value")]
+        invalid_count = len(records) - len(valid)
+
+        if invalid_count > len(records) * 0.1:
+            raise ValueError(
+                f"Demasiados registros invalidos: {invalid_count}/{len(records)}"
+            )
+
+        return {
+            "valid_records": valid,
+            "invalid_count": invalid_count,
+            "source": extracted["source"],
+        }
+
+    @task()
+    def transform(validated: dict) -> list:
+        """Transformar registros validados."""
+        records = validated["valid_records"]
+        return [
+            {
+                "id": r["id"],
+                "value_normalized": r["value"] / 100.0,
+                "category": "high" if r["value"] > 75 else "low",
+                "source": validated["source"],
+            }
+            for r in records
+        ]
+
+    @task()
+    def load(transformed: list) -> dict:
+        """Cargar datos al warehouse. Retorna resumen."""
+        # Simular carga a base de datos
+        loaded_count = len(transformed)
+        print(f"Cargando {loaded_count} registros al warehouse...")
+
+        return {
+            "loaded_count": loaded_count,
+            "status": "success",
+        }
+
+    @task()
+    def notify(load_result: dict, source: str):
+        """Notificar resultado del pipeline."""
+        print(
+            f"Pipeline completado: {load_result['loaded_count']} "
+            f"registros de '{source}' cargados exitosamente"
+        )
+
+    # ── Encadenar tareas (XCom implicito via argumentos) ──
+    extracted = extract(source="production")
+    validated = validate(extracted)
+    transformed = transform(validated)
+    load_result = load(transformed)
+    notify(load_result, source="production")
+
+# Instanciar el DAG
+taskflow_etl()
+```
+
+<Callout type="tip" title="Ventajas de TaskFlow API">
+  1. <strong>Menos boilerplate</strong> — no necesitas PythonOperator ni xcom_push/pull<br/>
+  2. <strong>Tipado implicito</strong> — los argumentos de funcion son los XComs<br/>
+  3. <strong>Lectura natural</strong> — el DAG se lee como codigo Python normal<br/>
+  4. <strong>Compatibilidad</strong> — se puede mezclar con operadores clasicos
+</Callout>
+
+### Buenas practicas con XComs
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Practica</th><th>Recomendacion</th><th>Motivo</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Tamano maximo</td><td>Menos de 48 KB por XCom</td><td>Se almacena en la metadata DB; valores grandes degradan rendimiento</td></tr>
+      <tr><td>Datos grandes</td><td>Guardar en S3/GCS, pasar solo la ruta via XCom</td><td>Evita saturar la base de datos de metadatos</td></tr>
+      <tr><td>Serialización</td><td>Usar dict/list nativos, evitar objetos complejos</td><td>XCom serializa a JSON por defecto</td></tr>
+      <tr><td>Custom backend</td><td>Usar XCom backend de S3 o GCS para datos medianos</td><td>Transparente para el codigo, almacena en object storage</td></tr>
+      <tr><td>Limpieza</td><td>Configurar <code>xcom_cleanup</code> en el scheduler</td><td>Los XComs se acumulan y pueden llenar la DB</td></tr>
+    </tbody>
+  </table>
+</div>
+
+```python
+# Ejemplo: pasar rutas en lugar de datos grandes
+@task()
+def extract_large_dataset() -> str:
+    """Guardar datos en S3, retornar solo la ruta."""
+    import boto3
+    import pandas as pd
+
+    df = pd.read_sql("SELECT * FROM big_table", engine)
+
+    s3_path = f"s3://data-lake/staging/{datetime.now():%Y-%m-%d}/extract.parquet"
+    df.to_parquet(s3_path)
+
+    # Solo pasar la ruta como XCom (no los datos)
+    return s3_path
+
+@task()
+def transform_large(s3_path: str) -> str:
+    """Leer de S3, transformar, guardar resultado."""
+    import pandas as pd
+
+    df = pd.read_parquet(s3_path)
+    df_clean = df.dropna().drop_duplicates()
+
+    output_path = s3_path.replace("extract.parquet", "transformed.parquet")
+    df_clean.to_parquet(output_path)
+    return output_path
+```
+
+### Generacion dinamica de DAGs
+
+Para crear multiples DAGs similares (por cliente, region, fuente de datos),
+se pueden generar dinamicamente desde una configuracion externa.
+
+```python
+# dags/dynamic_dag_generator.py
+import yaml
+from pathlib import Path
+from airflow.decorators import dag, task
+from datetime import datetime, timedelta
+
+# ── Cargar configuracion desde YAML ──
+CONFIG_PATH = Path(__file__).parent / "config" / "pipelines.yaml"
+
+# config/pipelines.yaml:
+# pipelines:
+#   - name: "client_acme"
+#     source_table: "acme.raw_events"
+#     schedule: "0 6 * * *"
+#     destination: "warehouse.acme_metrics"
+#     sla_hours: 2
+#
+#   - name: "client_globex"
+#     source_table: "globex.raw_events"
+#     schedule: "0 8 * * *"
+#     destination: "warehouse.globex_metrics"
+#     sla_hours: 3
+#
+#   - name: "client_initech"
+#     source_table: "initech.raw_events"
+#     schedule: "30 7 * * 1-5"
+#     destination: "warehouse.initech_metrics"
+#     sla_hours: 1
+
+def create_pipeline(config: dict):
+    """Factory function que genera un DAG por configuracion."""
+
+    @dag(
+        dag_id=f"etl_{config['name']}",
+        description=f"ETL pipeline para {config['name']}",
+        schedule=config["schedule"],
+        start_date=datetime(2024, 1, 1),
+        catchup=False,
+        default_args={
+            "owner": "data-team",
+            "retries": 3,
+            "retry_delay": timedelta(minutes=5),
+            "sla": timedelta(hours=config.get("sla_hours", 4)),
+        },
+        tags=["etl", "dynamic", config["name"]],
+    )
+    def pipeline():
+
+        @task()
+        def extract(source_table: str) -> str:
+            import pandas as pd
+            df = pd.read_sql(f"SELECT * FROM {source_table}", engine)
+            path = f"s3://lake/staging/{config['name']}/extract.parquet"
+            df.to_parquet(path)
+            return path
+
+        @task()
+        def transform(input_path: str) -> str:
+            import pandas as pd
+            df = pd.read_parquet(input_path)
+            df_agg = df.groupby("date").agg(
+                events=("event_id", "count"),
+                users=("user_id", "nunique"),
+            ).reset_index()
+            output = input_path.replace("extract", "transformed")
+            df_agg.to_parquet(output)
+            return output
+
+        @task()
+        def load(input_path: str, destination: str):
+            import pandas as pd
+            df = pd.read_parquet(input_path)
+            df.to_sql(destination, engine, if_exists="replace")
+
+        # Encadenar
+        extracted = extract(config["source_table"])
+        transformed = transform(extracted)
+        load(transformed, config["destination"])
+
+    return pipeline()
+
+# ── Generar DAGs dinamicamente ──
+with open(CONFIG_PATH) as f:
+    all_configs = yaml.safe_load(f)
+
+for pipeline_config in all_configs["pipelines"]:
+    # Cada llamada crea un DAG unico en el namespace global
+    globals()[f"etl_{pipeline_config['name']}"] = create_pipeline(pipeline_config)
+```
+
+<Callout type="warning" title="Precauciones con DAGs dinamicos">
+  1. <strong>Tiempo de parseo</strong> — el Scheduler parsea todos los DAGs periodicamente. Si generas
+  cientos de DAGs, asegurate de que el archivo se ejecuta rapido (no llamadas a APIs o DBs).<br/>
+  2. <strong>Configuracion en archivos</strong> — carga la config desde YAML/JSON local, nunca desde
+  endpoints remotos durante el parseo.<br/>
+  3. <strong>Nombre unico</strong> — cada <code>dag_id</code> debe ser unico. Usa el nombre del cliente/fuente
+  como sufijo para evitar colisiones.
+</Callout>
+</section>

@@ -1,91 +1,50 @@
 ---
 /**
- * DocViewer — Full-page documentation reader (Starlight-like layout).
- *
- * Hidden by default. When a topic is selected, the page controller hides
- * Hero/Library/Footer and shows this as the full page content.
- *
- * Layout:
+ * DocLayout — Layout for individual documentation pages (MPA).
+ * Extracted from DocViewer.astro. Preserves the exact same visual structure:
  *   - Left sidebar: sticky TOC navigation
  *   - Right area: scrollable document content (native page scroll)
+ *   - Mobile TOC: floating button + overlay panel
  */
-import { topics } from '../data/topics';
+import Layout from './Layout.astro';
+import Nav from '../components/Nav.astro';
 
-// REST API
-import BackendDoc from './docs/BackendDoc.astro';
-import FastAPIDoc from './docs/FastAPIDoc.astro';
-// UI KIT
-import DesignDoc from './docs/DesignDoc.astro';
-// DEVOPS
-import ContainersK8sDoc from './docs/ContainersK8sDoc.astro';
-import CICDDoc from './docs/CICDDoc.astro';
-import TerraformDoc from './docs/TerraformDoc.astro';
-import AirflowDoc from './docs/AirflowDoc.astro';
-// FRONTEND
-import ReactDoc from './docs/ReactDoc.astro';
-import AstroDoc from './docs/AstroDoc.astro';
-// BACKEND
-import PythonBackendDoc from './docs/PythonBackendDoc.astro';
-// ML
-import KerasDoc from './docs/KerasDoc.astro';
-import MLFlowDoc from './docs/MLFlowDoc.astro';
-// AGENTIC AI
-import AgentContainersDoc from './docs/AgentContainersDoc.astro';
-import LangChainDoc from './docs/LangChainDoc.astro';
-import GoogleA2ADoc from './docs/GoogleA2ADoc.astro';
-import MCPDoc from './docs/MCPDoc.astro';
-import PromptEngineeringDoc from './docs/PromptEngineeringDoc.astro';
-import CrewAIDoc from './docs/CrewAIDoc.astro';
+interface TocItem {
+  id: string;
+  label: string;
+}
 
-const docComponents: Record<string, any> = {
-  'fastapi-rest': FastAPIDoc,
-  'backend-integration': BackendDoc,
-  'design-system': DesignDoc,
-  'containers-k8s': ContainersK8sDoc,
-  'cicd-pipeline': CICDDoc,
-  'terraform-iac': TerraformDoc,
-  'apache-airflow': AirflowDoc,
-  'react-patterns': ReactDoc,
-  'astro-guide': AstroDoc,
-  'python-backend': PythonBackendDoc,
-  'keras-models': KerasDoc,
-  'mlflow-versioning': MLFlowDoc,
-  'agent-containers': AgentContainersDoc,
-  'langchain-agents': LangChainDoc,
-  'google-a2a': GoogleA2ADoc,
-  'mcp-python': MCPDoc,
-  'prompt-engineering': PromptEngineeringDoc,
-  'crewai-multiagent': CrewAIDoc,
-};
+interface Props {
+  title: string;
+  description: string;
+  intro: string;
+  breadcrumb: string[];
+  toc: TocItem[];
+}
+
+const { title, description, intro, breadcrumb, toc } = Astro.props;
+const baseUrl = import.meta.env.BASE_URL;
 ---
 
-<div id="doc-viewer" class="docviewer" style="display:none;">
+<Layout title={`${title} | Cookbooks`} description={description}>
+  <Nav mode="doc" breadcrumb={breadcrumb} />
 
-  <!-- Full-page layout -->
-  <div class="docviewer__shell">
+  <div class="docviewer">
+    <div class="docviewer__shell">
 
-    <!-- LEFT: Sticky sidebar -->
-    <aside class="docviewer__sidebar custom-scroll" id="doc-sidebar">
-      <!-- Back to library -->
-      <button class="docviewer__sidebar-back" id="doc-back-sidebar">
-        <i data-lucide="arrow-left" class="docviewer__sidebar-back-icon"></i>
-        Volver a Librería
-      </button>
+      <!-- LEFT: Sticky sidebar -->
+      <aside class="docviewer__sidebar custom-scroll">
+        <a href={baseUrl} class="docviewer__sidebar-back">
+          <i data-lucide="arrow-left" class="docviewer__sidebar-back-icon"></i>
+          Volver a Librería
+        </a>
 
-      <div class="docviewer__sidebar-divider"></div>
+        <div class="docviewer__sidebar-divider"></div>
 
-      <!-- TOC label -->
-      <div class="docviewer__toc-label">En esta página</div>
+        <div class="docviewer__toc-label">En esta página</div>
 
-      <!-- One TOC nav per topic (toggled via JS) -->
-      {topics.map(topic => (
-        <nav
-          class="docviewer__toc"
-          data-toc-for={topic.id}
-          aria-label={`Tabla de contenidos: ${topic.title}`}
-          style="display:none;"
-        >
-          {topic.toc.map((item, idx) => (
+        <nav class="docviewer__toc" aria-label={`Tabla de contenidos: ${title}`}>
+          {toc.map((item, idx) => (
             <a
               href={`#${item.id}`}
               class={`docviewer__toc-link ${idx === 0 ? 'docviewer__toc-link--active' : ''}`}
@@ -95,43 +54,32 @@ const docComponents: Record<string, any> = {
             </a>
           ))}
         </nav>
-      ))}
 
-      <!-- Sidebar sticky note -->
-      <div class="docviewer__sidebar-note">
-        <i data-lucide="pin" class="docviewer__sidebar-note-pin"></i>
-        <p>Pulsa <kbd>Ctrl+K</kbd> para buscar en toda la librería.</p>
-      </div>
-    </aside>
-
-    <!-- MOBILE TOC: floating button + overlay (visible <1024px) -->
-    <div class="docviewer__mobile-toc" id="doc-mobile-toc">
-      <button class="docviewer__mobile-toc-btn" id="doc-mobile-toc-btn" aria-label="Tabla de contenidos">
-        <i data-lucide="list" class="docviewer__mobile-toc-btn-icon"></i>
-        <span>En esta página</span>
-      </button>
-
-      <!-- Overlay backdrop -->
-      <div class="docviewer__mobile-toc-overlay" id="doc-mobile-toc-overlay"></div>
-
-      <!-- Panel -->
-      <div class="docviewer__mobile-toc-panel" id="doc-mobile-toc-panel">
-        <div class="docviewer__mobile-toc-panel-header">
-          <span class="docviewer__toc-label">En esta página</span>
-          <button class="docviewer__mobile-toc-close" id="doc-mobile-toc-close" aria-label="Cerrar">
-            <i data-lucide="x" class="docviewer__mobile-toc-close-icon"></i>
-          </button>
+        <div class="docviewer__sidebar-note">
+          <i data-lucide="pin" class="docviewer__sidebar-note-pin"></i>
+          <p>Pulsa <kbd>Ctrl+K</kbd> para buscar en toda la librería.</p>
         </div>
+      </aside>
 
-        <!-- Cloned TOC links (rendered per topic, toggled via JS) -->
-        {topics.map(topic => (
-          <nav
-            class="docviewer__toc docviewer__toc--mobile"
-            data-toc-mobile-for={topic.id}
-            aria-label={`Tabla de contenidos móvil: ${topic.title}`}
-            style="display:none;"
-          >
-            {topic.toc.map((item, idx) => (
+      <!-- MOBILE TOC: floating button + overlay (visible <1024px) -->
+      <div class="docviewer__mobile-toc">
+        <button class="docviewer__mobile-toc-btn" id="doc-mobile-toc-btn" aria-label="Tabla de contenidos">
+          <i data-lucide="list" class="docviewer__mobile-toc-btn-icon"></i>
+          <span>En esta página</span>
+        </button>
+
+        <div class="docviewer__mobile-toc-overlay" id="doc-mobile-toc-overlay"></div>
+
+        <div class="docviewer__mobile-toc-panel" id="doc-mobile-toc-panel">
+          <div class="docviewer__mobile-toc-panel-header">
+            <span class="docviewer__toc-label">En esta página</span>
+            <button class="docviewer__mobile-toc-close" id="doc-mobile-toc-close" aria-label="Cerrar">
+              <i data-lucide="x" class="docviewer__mobile-toc-close-icon"></i>
+            </button>
+          </div>
+
+          <nav class="docviewer__toc docviewer__toc--mobile">
+            {toc.map((item, idx) => (
               <a
                 href={`#${item.id}`}
                 class={`docviewer__toc-link ${idx === 0 ? 'docviewer__toc-link--active' : ''}`}
@@ -141,58 +89,158 @@ const docComponents: Record<string, any> = {
               </a>
             ))}
           </nav>
-        ))}
-      </div>
-    </div>
-
-    <!-- RIGHT: Document content (native page scroll) -->
-    <main class="docviewer__main" id="doc-main">
-      <!-- Breadcrumbs -->
-      <div class="docviewer__breadcrumbs" id="doc-breadcrumbs"></div>
-
-      <!-- Pre-rendered doc pages -->
-      {topics.map(topic => {
-        const DocComponent = docComponents[topic.id];
-        return (
-          <div class="docviewer__page" data-doc-page={topic.id} style="display:none;">
-            {DocComponent && <DocComponent />}
-          </div>
-        );
-      })}
-
-      <!-- End of document -->
-      <div class="docviewer__end">
-        <div class="docviewer__end-rule">
-          <span class="docviewer__end-label">END OF DOCUMENT</span>
         </div>
-        <p class="docviewer__end-text">
-          ¿Necesitas más?
-          <button class="docviewer__end-link" id="doc-back-bottom">Volver a la Librería &rarr;</button>
-        </p>
       </div>
-    </main>
+
+      <!-- RIGHT: Document content (native page scroll) -->
+      <main class="docviewer__main">
+        <!-- Breadcrumbs -->
+        <div class="docviewer__breadcrumbs">
+          {breadcrumb.map((crumb, i) => (
+            <>
+              <span style={i === breadcrumb.length - 1 ? 'color:var(--text-primary)' : ''}>
+                {crumb}
+              </span>
+              {i < breadcrumb.length - 1 && <span style="color:var(--text-ghost)">/</span>}
+            </>
+          ))}
+        </div>
+
+        <!-- Doc content from MDX -->
+        <article class="doc-article">
+          <h1 class="doc-article__title">{title}</h1>
+          <p class="doc-article__intro" set:html={intro} />
+          <slot />
+        </article>
+
+        <!-- End of document -->
+        <div class="docviewer__end">
+          <div class="docviewer__end-rule">
+            <span class="docviewer__end-label">END OF DOCUMENT</span>
+          </div>
+          <p class="docviewer__end-text">
+            ¿Necesitas más?
+            <a href={`${baseUrl}#library`} class="docviewer__end-link">Volver a la Librería &rarr;</a>
+          </p>
+        </div>
+      </main>
+    </div>
   </div>
-</div>
+</Layout>
+
+<script is:inline define:vars={{ baseUrl: import.meta.env.BASE_URL }}>
+(function () {
+  // --- Scroll Spy for TOC ---
+  const sections = document.querySelectorAll('article.doc-article section[id]');
+  const tocLinks = document.querySelectorAll('[data-toc-link]');
+  const mobileTocLinks = document.querySelectorAll('[data-toc-mobile-link]');
+
+  if (sections.length) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const id = entry.target.id;
+            tocLinks.forEach(link => {
+              link.classList.toggle(
+                'docviewer__toc-link--active',
+                link.getAttribute('data-toc-link') === id
+              );
+            });
+            mobileTocLinks.forEach(link => {
+              link.classList.toggle(
+                'docviewer__toc-link--active',
+                link.getAttribute('data-toc-mobile-link') === id
+              );
+            });
+          }
+        });
+      },
+      { rootMargin: '-80px 0px -60% 0px', threshold: 0 }
+    );
+    sections.forEach(s => observer.observe(s));
+  }
+
+  // --- TOC link smooth scroll (prevent hash change) ---
+  document.addEventListener('click', (e) => {
+    const desktopLink = e.target.closest('[data-toc-link]');
+    const mobileLink = e.target.closest('[data-toc-mobile-link]');
+    const link = desktopLink || mobileLink;
+    if (!link) return;
+
+    e.preventDefault();
+    const targetId = desktopLink
+      ? link.getAttribute('data-toc-link')
+      : link.getAttribute('data-toc-mobile-link');
+    const targetEl = document.getElementById(targetId);
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    if (mobileLink) closeMobileToc();
+  });
+
+  // --- Mobile TOC ---
+  const mobileTocBtn = document.getElementById('doc-mobile-toc-btn');
+  const mobileTocPanel = document.getElementById('doc-mobile-toc-panel');
+  const mobileTocOverlay = document.getElementById('doc-mobile-toc-overlay');
+  const mobileTocClose = document.getElementById('doc-mobile-toc-close');
+
+  function openMobileToc() {
+    mobileTocPanel?.classList.add('active');
+    mobileTocOverlay?.classList.add('active');
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+
+  function closeMobileToc() {
+    mobileTocPanel?.classList.remove('active');
+    mobileTocOverlay?.classList.remove('active');
+  }
+
+  mobileTocBtn?.addEventListener('click', openMobileToc);
+  mobileTocClose?.addEventListener('click', closeMobileToc);
+  mobileTocOverlay?.addEventListener('click', closeMobileToc);
+
+  // --- Copy code button ---
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-copy-btn]');
+    if (!btn) return;
+    const codeBlock = btn.closest('.codeblock');
+    const code = codeBlock?.querySelector('code')?.textContent || '';
+    navigator.clipboard.writeText(code).then(() => {
+      const icon = btn.querySelector('[data-lucide]');
+      if (icon) {
+        icon.setAttribute('data-lucide', 'check');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        setTimeout(() => {
+          icon.setAttribute('data-lucide', 'copy');
+          if (typeof lucide !== 'undefined') lucide.createIcons();
+        }, 2000);
+      }
+    });
+  });
+
+  // --- Ctrl+K shortcut -> go to library ---
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      window.location.href = baseUrl + '#library';
+    }
+  });
+})();
+</script>
 
 <style>
   /* ===== FULL-PAGE DOC VIEWER ===== */
   .docviewer {
-    padding-top: 64px; /* nav height */
+    padding-top: 64px;
     min-height: 100vh;
     background: var(--bg-void);
-    /* Transition animation */
     animation: docviewer-enter 0.4s ease-out both;
   }
 
   @keyframes docviewer-enter {
-    from {
-      opacity: 0;
-      transform: translateY(12px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 
   .docviewer__shell {
@@ -249,7 +297,6 @@ const docComponents: Record<string, any> = {
     margin-bottom: 0.75rem;
   }
 
-  /* TOC links */
   .docviewer__toc {
     display: flex;
     flex-direction: column;
@@ -279,7 +326,6 @@ const docComponents: Record<string, any> = {
     background: linear-gradient(to right, rgba(34, 211, 238, 0.06), transparent);
   }
 
-  /* Sidebar note */
   .docviewer__sidebar-note {
     position: relative;
     margin-top: var(--space-xl);
@@ -327,19 +373,13 @@ const docComponents: Record<string, any> = {
   }
 
   @media (min-width: 768px) {
-    .docviewer__main {
-      padding: var(--space-2xl) var(--space-3xl);
-    }
+    .docviewer__main { padding: var(--space-2xl) var(--space-3xl); }
   }
 
   @media (min-width: 1024px) {
-    .docviewer__main {
-      margin: 0;
-      padding: var(--space-2xl) var(--space-3xl) var(--space-4xl);
-    }
+    .docviewer__main { margin: 0; padding: var(--space-2xl) var(--space-3xl) var(--space-4xl); }
   }
 
-  /* Breadcrumbs */
   .docviewer__breadcrumbs {
     display: flex;
     align-items: center;
@@ -350,7 +390,6 @@ const docComponents: Record<string, any> = {
     margin-bottom: 2rem;
   }
 
-  /* End of document */
   .docviewer__end {
     margin-top: var(--space-4xl);
     text-align: center;
@@ -394,9 +433,7 @@ const docComponents: Record<string, any> = {
   .docviewer__end-link:hover { color: white; }
 
   /* --- MOBILE TOC --- */
-  .docviewer__mobile-toc {
-    display: block;
-  }
+  .docviewer__mobile-toc { display: block; }
 
   @media (min-width: 1024px) {
     .docviewer__mobile-toc { display: none; }
@@ -426,10 +463,7 @@ const docComponents: Record<string, any> = {
     color: white;
   }
 
-  .docviewer__mobile-toc-btn-icon {
-    width: 16px;
-    height: 16px;
-  }
+  .docviewer__mobile-toc-btn-icon { width: 16px; height: 16px; }
 
   .docviewer__mobile-toc-overlay {
     display: none;
@@ -441,9 +475,7 @@ const docComponents: Record<string, any> = {
     -webkit-backdrop-filter: blur(4px);
   }
 
-  .docviewer__mobile-toc-overlay.active {
-    display: block;
-  }
+  .docviewer__mobile-toc-overlay.active { display: block; }
 
   .docviewer__mobile-toc-panel {
     position: fixed;
@@ -461,9 +493,7 @@ const docComponents: Record<string, any> = {
     transition: transform 0.3s ease;
   }
 
-  .docviewer__mobile-toc-panel.active {
-    transform: translateY(0);
-  }
+  .docviewer__mobile-toc-panel.active { transform: translateY(0); }
 
   .docviewer__mobile-toc-panel-header {
     display: flex;
@@ -482,14 +512,8 @@ const docComponents: Record<string, any> = {
     transition: color 0.2s;
   }
 
-  .docviewer__mobile-toc-close:hover {
-    color: white;
-  }
-
-  .docviewer__mobile-toc-close-icon {
-    width: 18px;
-    height: 18px;
-  }
+  .docviewer__mobile-toc-close:hover { color: white; }
+  .docviewer__mobile-toc-close-icon { width: 18px; height: 18px; }
 
   .docviewer__toc--mobile .docviewer__toc-link {
     padding: 0.625rem 0 0.625rem 1rem;
@@ -566,7 +590,18 @@ const docComponents: Record<string, any> = {
     font-weight: 500;
   }
 
-  /* Inline code */
+  /* Inline code (markdown backticks) */
+  .docviewer__main :global(code:not(pre code)) {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    padding: 0.125rem 0.375rem;
+    border-radius: var(--radius-sm);
+    color: var(--accent-pink);
+  }
+
+  /* Legacy inline code classes (for HTML in MDX) */
   .docviewer__main :global(.doc-inline-code) {
     font-family: var(--font-mono);
     font-size: 0.8125rem;
@@ -617,9 +652,7 @@ const docComponents: Record<string, any> = {
     border-bottom: 1px dashed var(--border-default);
   }
 
-  .docviewer__main :global(.doc-table tbody tr:last-child td) {
-    border-bottom: none;
-  }
+  .docviewer__main :global(.doc-table tbody tr:last-child td) { border-bottom: none; }
 
   .docviewer__main :global(.doc-table tbody tr:hover) {
     background: rgba(24, 24, 27, 0.5);
@@ -635,22 +668,15 @@ const docComponents: Record<string, any> = {
     margin-right: 0.25rem;
   }
 
-  /* Image styles (for DocImage within docs) */
-  .docviewer__main :global(.doc-image) {
-    margin-block: 1.5rem;
-  }
+  .docviewer__main :global(.doc-image) { margin-block: 1.5rem; }
 
-  /* List styles (for DocList within docs) */
-  .docviewer__main :global(.doc-list) {
-    margin-block: 1rem;
-  }
+  .docviewer__main :global(.doc-list) { margin-block: 1rem; }
 
   .docviewer__main :global(.doc-list li) {
     color: var(--text-secondary);
     line-height: 1.7;
   }
 
-  /* SubSection h3 styles for DocSection usage */
   .docviewer__main :global(.doc-article__subsection-title) {
     font-size: 1.125rem;
     font-weight: 600;
@@ -658,5 +684,20 @@ const docComponents: Record<string, any> = {
     margin-top: 1.5rem;
     margin-bottom: 0.5rem;
     scroll-margin-top: 5rem;
+  }
+
+  /* Shiki code block overrides */
+  .docviewer__main :global(pre.astro-code) {
+    background-color: transparent !important;
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.7;
+    white-space: pre;
+  }
+
+  .docviewer__main :global(pre.astro-code code) {
+    font-family: inherit;
   }
 </style>

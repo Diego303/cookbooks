@@ -1,0 +1,1810 @@
+---
+title: "React Patterns"
+description: "Colección de hooks personalizados, gestión de estado y optimización de renders."
+intro: "Colección de patrones probados en producción para aplicaciones React/Next.js. Hooks personalizados, data fetching, formularios, gestión de estado, patrones de componentes, manejo de errores, rendimiento y testing."
+category: "FRONTEND"
+categoryColor: "green"
+icon: "code"
+tags: ["Next.js", "Hooks"]
+breadcrumb: ["Docs", "Frontend", "React Patterns"]
+order: 8
+toc:
+  - { id: "custom-hooks", label: "Custom Hooks" }
+  - { id: "data-fetching", label: "Data Fetching" }
+  - { id: "form-handling", label: "Form Handling" }
+  - { id: "state-management", label: "State Management" }
+  - { id: "component-patterns", label: "Component Patterns" }
+  - { id: "error-handling", label: "Error Handling" }
+  - { id: "performance", label: "Performance" }
+  - { id: "testing", label: "Testing" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="custom-hooks">
+<h2 class="doc-article__h2" id="custom-hooks">Custom Hooks <span class="doc-article__badge">Esencial</span></h2>
+
+Los hooks personalizados encapsulan lógica reutilizable. Sigue la convención `use*` y mantén cada hook con una sola responsabilidad.
+
+### useDebounce
+
+Hook para debouncear valores -- ideal para inputs de búsqueda que disparan peticiones a una API.
+
+```typescript
+import { useState, useEffect } from 'react';
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const timer = setTimeout(
+      () => setDebounced(value),
+      delay
+    );
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+
+  return debounced;
+}
+
+export default useDebounce;
+```
+
+### useLocalStorage
+
+Persiste estado en `localStorage` con seguridad para SSR (Next.js). Detecta si estamos en el servidor y evita errores de hidratación.
+
+```typescript
+import { useState, useEffect, useCallback } from 'react';
+
+function useLocalStorage<T>(
+  key: string,
+  initialValue: T
+): [T, (value: T | ((prev: T) => T)) => void, () => void] {
+  // Lectura lazy -- solo ejecuta en cliente
+  const [storedValue, setStoredValue] = useState<T>(() => {
+    if (typeof window === 'undefined') return initialValue;
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? (JSON.parse(item) as T) : initialValue;
+    } catch {
+      return initialValue;
+    }
+  });
+
+  // Sincronizar con localStorage cuando cambia el valor
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(key, JSON.stringify(storedValue));
+    } catch (error) {
+      console.warn(`Error guardando en localStorage key="${key}":`, error);
+    }
+  }, [key, storedValue]);
+
+  // Escuchar cambios en otras pestañas
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === key && e.newValue) {
+        setStoredValue(JSON.parse(e.newValue) as T);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [key]);
+
+  const removeValue = useCallback(() => {
+    setStoredValue(initialValue);
+    window.localStorage.removeItem(key);
+  }, [key, initialValue]);
+
+  return [storedValue, setStoredValue, removeValue];
+}
+```
+
+Uso en un componente:
+
+```tsx
+function ThemeToggle() {
+  const [theme, setTheme] = useLocalStorage<'light' | 'dark'>(
+    'user-theme',
+    'dark'
+  );
+
+  return (
+    <button onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
+      Tema actual: {theme}
+    </button>
+  );
+}
+```
+
+### useFetch
+
+Hook genérico para peticiones HTTP con AbortController, estados de carga y error, y soporte para refetch manual.
+
+```typescript
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+interface UseFetchResult<T> {
+  data: T | null;
+  loading: boolean;
+  error: Error | null;
+  refetch: () => void;
+}
+
+function useFetch<T>(url: string, options?: RequestInit): UseFetchResult<T> {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const fetchData = useCallback(async () => {
+    // Cancelar petición anterior si existe
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(url, {
+        ...options,
+        signal: abortRef.current.signal,
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+
+      const json = (await res.json()) as T;
+      setData(json);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, [url]);
+
+  useEffect(() => {
+    fetchData();
+    return () => abortRef.current?.abort();
+  }, [fetchData]);
+
+  return { data, loading, error, refetch: fetchData };
+}
+```
+
+### useMediaQuery
+
+Detecta si un media query se cumple. Perfecto para lógica condicional responsive que no puede resolverse con CSS.
+
+```typescript
+import { useState, useEffect } from 'react';
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia(query).matches;
+  });
+
+  useEffect(() => {
+    const mql = window.matchMedia(query);
+    const handler = (e: MediaQueryListEvent) => setMatches(e.matches);
+    mql.addEventListener('change', handler);
+    setMatches(mql.matches);
+    return () => mql.removeEventListener('change', handler);
+  }, [query]);
+
+  return matches;
+}
+
+// Uso
+function Sidebar() {
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  if (isMobile) return <MobileDrawer />;
+  return <DesktopSidebar />;
+}
+```
+
+### useClickOutside
+
+Detecta clics fuera de un elemento -- esencial para dropdowns, modales y popovers.
+
+```typescript
+import { useEffect, useRef } from 'react';
+
+function useClickOutside<T extends HTMLElement>(
+  handler: () => void
+) {
+  const ref = useRef<T>(null);
+
+  useEffect(() => {
+    const listener = (event: MouseEvent | TouchEvent) => {
+      if (!ref.current || ref.current.contains(event.target as Node)) {
+        return;
+      }
+      handler();
+    };
+
+    document.addEventListener('mousedown', listener);
+    document.addEventListener('touchstart', listener);
+    return () => {
+      document.removeEventListener('mousedown', listener);
+      document.removeEventListener('touchstart', listener);
+    };
+  }, [handler]);
+
+  return ref;
+}
+
+// Uso
+function Dropdown() {
+  const [open, setOpen] = useState(false);
+  const ref = useClickOutside<HTMLDivElement>(() => setOpen(false));
+
+  return (
+    <div ref={ref}>
+      <button onClick={() => setOpen(!open)}>Menu</button>
+      {open && <ul className="dropdown-menu">...</ul>}
+    </div>
+  );
+}
+```
+
+### useOnScreen
+
+Detecta si un elemento es visible en el viewport usando IntersectionObserver. Ideal para lazy loading y animaciones al scroll.
+
+```typescript
+import { useState, useEffect, useRef } from 'react';
+
+function useOnScreen<T extends HTMLElement>(
+  options?: IntersectionObserverInit
+): [React.RefObject<T | null>, boolean] {
+  const ref = useRef<T>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+
+    const observer = new IntersectionObserver(([entry]) => {
+      setIsVisible(entry.isIntersecting);
+    }, options);
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [options]);
+
+  return [ref, isVisible];
+}
+
+// Uso: animación al aparecer en pantalla
+function AnimatedCard({ children }: { children: React.ReactNode }) {
+  const [ref, isVisible] = useOnScreen<HTMLDivElement>({
+    threshold: 0.3,
+  });
+
+  return (
+    <div
+      ref={ref}
+      className={`card ${isVisible ? 'fade-in' : 'opacity-0'}`}
+    >
+      {children}
+    </div>
+  );
+}
+```
+
+<Callout type="tip" title="Regla de los Hooks">
+  Nunca llames hooks dentro de condicionales, loops o funciones anidadas.
+  React depende del orden de llamada para asociar estado correctamente.
+</Callout>
+</section>
+
+<section id="data-fetching">
+<h2 class="doc-article__h2" id="data-fetching">Data Fetching <span class="doc-article__badge">TanStack Query</span></h2>
+
+TanStack Query (React Query) es el estándar para data fetching en React. Maneja caché, revalidación, estados de carga y errores de forma declarativa.
+
+### Configuración base
+
+```typescript
+// providers.tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,      // 5 minutos antes de marcar como stale
+      gcTime: 10 * 60 * 1000,         // 10 minutos en caché inactiva
+      retry: 2,                        // reintentar 2 veces
+      refetchOnWindowFocus: false,     // no refetch al volver a la pestaña
+    },
+  },
+});
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      {children}
+    </QueryClientProvider>
+  );
+}
+```
+
+### useQuery -- Lectura de datos
+
+```typescript
+import { useQuery } from '@tanstack/react-query';
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+// Función de fetching separada -- facilita testing y reutilización
+async function fetchUsers(): Promise<User[]> {
+  const res = await fetch('/api/users');
+  if (!res.ok) throw new Error('Error al obtener usuarios');
+  return res.json();
+}
+
+function UserList() {
+  const { data: users, isLoading, error } = useQuery({
+    queryKey: ['users'],
+    queryFn: fetchUsers,
+  });
+
+  if (isLoading) return <Skeleton count={5} />;
+  if (error) return <ErrorMessage error={error} />;
+
+  return (
+    <ul>
+      {users?.map(user => (
+        <li key={user.id}>{user.name} — {user.email}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+### useMutation -- Escritura de datos
+
+```typescript
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+
+interface CreateUserDTO {
+  name: string;
+  email: string;
+}
+
+function useCreateUser() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (newUser: CreateUserDTO) => {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser),
+      });
+      if (!res.ok) throw new Error('Error creando usuario');
+      return res.json() as Promise<User>;
+    },
+    // Invalidar caché al completar para refrescar la lista
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+}
+
+// Uso en componente
+function CreateUserForm() {
+  const { mutate, isPending, error } = useCreateUser();
+
+  const handleSubmit = (data: CreateUserDTO) => {
+    mutate(data, {
+      onSuccess: () => toast.success('Usuario creado'),
+    });
+  };
+
+  return <form onSubmit={...}>...</form>;
+}
+```
+
+### Actualizaciones optimistas
+
+Actualiza la UI antes de que la API responda para una experiencia instantánea.
+
+```typescript
+function useToggleFavorite() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (itemId: string) =>
+      fetch(`/api/items/${itemId}/favorite`, { method: 'POST' }),
+
+    onMutate: async (itemId) => {
+      // Cancelar queries en vuelo para evitar sobreescritura
+      await queryClient.cancelQueries({ queryKey: ['items'] });
+
+      // Snapshot del estado anterior
+      const previous = queryClient.getQueryData<Item[]>(['items']);
+
+      // Actualización optimista
+      queryClient.setQueryData<Item[]>(['items'], (old) =>
+        old?.map(item =>
+          item.id === itemId
+            ? { ...item, isFavorite: !item.isFavorite }
+            : item
+        )
+      );
+
+      return { previous };
+    },
+
+    // Rollback si falla
+    onError: (_err, _itemId, context) => {
+      queryClient.setQueryData(['items'], context?.previous);
+    },
+
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['items'] });
+    },
+  });
+}
+```
+
+### Scroll infinito con useInfiniteQuery
+
+```typescript
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useOnScreen } from '@/hooks/useOnScreen';
+
+interface PaginatedResponse<T> {
+  data: T[];
+  nextCursor: string | null;
+}
+
+function useInfiniteItems() {
+  return useInfiniteQuery({
+    queryKey: ['items'],
+    queryFn: async ({ pageParam }): Promise<PaginatedResponse<Item>> => {
+      const res = await fetch(`/api/items?cursor=${pageParam}`);
+      return res.json();
+    },
+    initialPageParam: '',
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  });
+}
+
+function InfiniteList() {
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useInfiniteItems();
+  const [sentinelRef, isVisible] = useOnScreen<HTMLDivElement>({});
+
+  useEffect(() => {
+    if (isVisible && hasNextPage) fetchNextPage();
+  }, [isVisible, hasNextPage, fetchNextPage]);
+
+  const items = data?.pages.flatMap(page => page.data) ?? [];
+
+  return (
+    <div>
+      {items.map(item => <ItemCard key={item.id} item={item} />)}
+      <div ref={sentinelRef} style={{ height: 1 }} />
+      {isFetchingNextPage && <Spinner />}
+    </div>
+  );
+}
+```
+
+<Callout type="info" title="Query Keys">
+  Usa arrays jerárquicos como query keys: `['users', userId, 'posts']`.
+  Esto permite invalidar toda la caché de un usuario con
+  `invalidateQueries({ queryKey: ['users', userId] })`.
+</Callout>
+</section>
+
+<section id="form-handling">
+<h2 class="doc-article__h2" id="form-handling">Form Handling <span class="doc-article__badge">React Hook Form + Zod</span></h2>
+
+React Hook Form minimiza re-renders y Zod proporciona validación type-safe. Juntos forman la combinación más eficiente para formularios en React.
+
+### Configuración con Zod
+
+```typescript
+import { z } from 'zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+
+// 1. Definir schema de validación
+const userSchema = z.object({
+  name: z
+    .string()
+    .min(2, 'El nombre debe tener al menos 2 caracteres')
+    .max(50, 'Máximo 50 caracteres'),
+  email: z
+    .string()
+    .email('Email inválido'),
+  role: z.enum(['admin', 'editor', 'viewer'], {
+    errorMap: () => ({ message: 'Selecciona un rol válido' }),
+  }),
+  age: z
+    .number({ coerce: true })
+    .min(18, 'Debes ser mayor de edad')
+    .max(120, 'Edad no válida'),
+  bio: z
+    .string()
+    .max(500)
+    .optional(),
+});
+
+// 2. Inferir el tipo TypeScript del schema
+type UserFormData = z.infer<typeof userSchema>;
+```
+
+### Formulario completo
+
+```tsx
+function UserForm() {
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+    reset,
+  } = useForm<UserFormData>({
+    resolver: zodResolver(userSchema),
+    defaultValues: {
+      name: '',
+      email: '',
+      role: 'viewer',
+      age: undefined,
+      bio: '',
+    },
+  });
+
+  const onSubmit = async (data: UserFormData) => {
+    await createUser(data);
+    reset();
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} noValidate>
+      <div>
+        <label htmlFor="name">Nombre</label>
+        <input id="name" {...register('name')} />
+        {errors.name && (
+          <span className="error">{errors.name.message}</span>
+        )}
+      </div>
+
+      <div>
+        <label htmlFor="email">Email</label>
+        <input id="email" type="email" {...register('email')} />
+        {errors.email && (
+          <span className="error">{errors.email.message}</span>
+        )}
+      </div>
+
+      <div>
+        <label htmlFor="role">Rol</label>
+        <select id="role" {...register('role')}>
+          <option value="viewer">Viewer</option>
+          <option value="editor">Editor</option>
+          <option value="admin">Admin</option>
+        </select>
+        {errors.role && (
+          <span className="error">{errors.role.message}</span>
+        )}
+      </div>
+
+      <div>
+        <label htmlFor="age">Edad</label>
+        <input id="age" type="number" {...register('age')} />
+        {errors.age && (
+          <span className="error">{errors.age.message}</span>
+        )}
+      </div>
+
+      <button type="submit" disabled={isSubmitting}>
+        {isSubmitting ? 'Guardando...' : 'Guardar'}
+      </button>
+    </form>
+  );
+}
+```
+
+### Campos dinámicos con useFieldArray
+
+Ideal para formularios donde el usuario agrega o elimina items (tags, direcciones, experiencia laboral).
+
+```tsx
+import { useForm, useFieldArray } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+const projectSchema = z.object({
+  title: z.string().min(1, 'Título requerido'),
+  members: z
+    .array(
+      z.object({
+        name: z.string().min(1, 'Nombre requerido'),
+        role: z.string().min(1, 'Rol requerido'),
+      })
+    )
+    .min(1, 'Agrega al menos un miembro'),
+});
+
+type ProjectFormData = z.infer<typeof projectSchema>;
+
+function ProjectForm() {
+  const { register, control, handleSubmit, formState: { errors } } =
+    useForm<ProjectFormData>({
+      resolver: zodResolver(projectSchema),
+      defaultValues: { title: '', members: [{ name: '', role: '' }] },
+    });
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: 'members',
+  });
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <input {...register('title')} placeholder="Título del proyecto" />
+
+      {fields.map((field, index) => (
+        <div key={field.id} className="member-row">
+          <input
+            {...register(`members.${index}.name`)}
+            placeholder="Nombre"
+          />
+          <input
+            {...register(`members.${index}.role`)}
+            placeholder="Rol"
+          />
+          <button type="button" onClick={() => remove(index)}>
+            Eliminar
+          </button>
+        </div>
+      ))}
+
+      <button type="button" onClick={() => append({ name: '', role: '' })}>
+        + Agregar miembro
+      </button>
+      <button type="submit">Crear proyecto</button>
+    </form>
+  );
+}
+```
+
+<Callout type="tip" title="Rendimiento de formularios">
+  React Hook Form usa refs internamente, evitando re-renders en cada keystroke.
+  Si usas `watch()` para observar campos, limita su uso a los campos estrictamente
+  necesarios para evitar re-renders innecesarios.
+</Callout>
+</section>
+
+<section id="state-management">
+<h2 class="doc-article__h2" id="state-management">State Management <span class="doc-article__badge">Zustand + Context</span></h2>
+
+Para estado global, usamos una combinación de **React Context** para datos de baja frecuencia (tema, auth) y **Zustand** para estado de alta frecuencia (UI, formularios).
+
+### Zustand -- Store básico
+
+```typescript
+import { create } from 'zustand';
+
+interface Store {
+  count: number;
+  increment: () => void;
+  reset: () => void;
+}
+
+const useStore = create<Store>((set) => ({
+  count: 0,
+  increment: () =>
+    set((state) => ({ count: state.count + 1 })),
+  reset: () =>
+    set({ count: 0 }),
+}));
+```
+
+### Context + useReducer para estado complejo
+
+Cuando tienes estado con múltiples transiciones interdependientes, `useReducer` ofrece mejor trazabilidad que múltiples `useState`.
+
+```typescript
+import { createContext, useContext, useReducer, type Dispatch } from 'react';
+
+// Tipos del estado y acciones
+interface CartItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
+interface CartState {
+  items: CartItem[];
+  discount: number;
+}
+
+type CartAction =
+  | { type: 'ADD_ITEM'; payload: Omit<CartItem, 'quantity'> }
+  | { type: 'REMOVE_ITEM'; payload: { id: string } }
+  | { type: 'UPDATE_QUANTITY'; payload: { id: string; quantity: number } }
+  | { type: 'APPLY_DISCOUNT'; payload: { discount: number } }
+  | { type: 'CLEAR' };
+
+// Reducer puro -- fácil de testear
+function cartReducer(state: CartState, action: CartAction): CartState {
+  switch (action.type) {
+    case 'ADD_ITEM': {
+      const existing = state.items.find(i => i.id === action.payload.id);
+      if (existing) {
+        return {
+          ...state,
+          items: state.items.map(i =>
+            i.id === action.payload.id
+              ? { ...i, quantity: i.quantity + 1 }
+              : i
+          ),
+        };
+      }
+      return {
+        ...state,
+        items: [...state.items, { ...action.payload, quantity: 1 }],
+      };
+    }
+    case 'REMOVE_ITEM':
+      return {
+        ...state,
+        items: state.items.filter(i => i.id !== action.payload.id),
+      };
+    case 'UPDATE_QUANTITY':
+      return {
+        ...state,
+        items: state.items.map(i =>
+          i.id === action.payload.id
+            ? { ...i, quantity: action.payload.quantity }
+            : i
+        ),
+      };
+    case 'APPLY_DISCOUNT':
+      return { ...state, discount: action.payload.discount };
+    case 'CLEAR':
+      return { items: [], discount: 0 };
+  }
+}
+
+// Context
+const CartContext = createContext<{
+  state: CartState;
+  dispatch: Dispatch<CartAction>;
+} | null>(null);
+
+export function CartProvider({ children }: { children: React.ReactNode }) {
+  const [state, dispatch] = useReducer(cartReducer, {
+    items: [],
+    discount: 0,
+  });
+
+  return (
+    <CartContext.Provider value={{ state, dispatch }}>
+      {children}
+    </CartContext.Provider>
+  );
+}
+
+export function useCart() {
+  const ctx = useContext(CartContext);
+  if (!ctx) throw new Error('useCart debe usarse dentro de CartProvider');
+  return ctx;
+}
+```
+
+### Zustand -- Patrón Slices
+
+Para stores grandes, divide el estado en "slices" que se combinan en un solo store.
+
+```typescript
+import { create, type StateCreator } from 'zustand';
+
+// Slice de autenticación
+interface AuthSlice {
+  user: { id: string; name: string } | null;
+  login: (user: AuthSlice['user']) => void;
+  logout: () => void;
+}
+
+const createAuthSlice: StateCreator<AuthSlice & UISlice, [], [], AuthSlice> = (set) => ({
+  user: null,
+  login: (user) => set({ user }),
+  logout: () => set({ user: null }),
+});
+
+// Slice de UI
+interface UISlice {
+  sidebarOpen: boolean;
+  theme: 'light' | 'dark';
+  toggleSidebar: () => void;
+  setTheme: (theme: UISlice['theme']) => void;
+}
+
+const createUISlice: StateCreator<AuthSlice & UISlice, [], [], UISlice> = (set) => ({
+  sidebarOpen: true,
+  theme: 'dark',
+  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  setTheme: (theme) => set({ theme }),
+});
+
+// Store combinado
+const useAppStore = create<AuthSlice & UISlice>()((...args) => ({
+  ...createAuthSlice(...args),
+  ...createUISlice(...args),
+}));
+```
+
+### Zustand -- Persist Middleware
+
+Persiste automáticamente el estado en `localStorage` o `sessionStorage`.
+
+```typescript
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+
+interface SettingsStore {
+  language: string;
+  notifications: boolean;
+  setLanguage: (lang: string) => void;
+  toggleNotifications: () => void;
+}
+
+const useSettings = create<SettingsStore>()(
+  persist(
+    (set) => ({
+      language: 'es',
+      notifications: true,
+      setLanguage: (language) => set({ language }),
+      toggleNotifications: () =>
+        set((s) => ({ notifications: !s.notifications })),
+    }),
+    {
+      name: 'app-settings',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        language: state.language,
+        notifications: state.notifications,
+      }),
+    }
+  )
+);
+```
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Solución</th>
+        <th>Cuándo usar</th>
+        <th>Re-renders</th>
+        <th>Persistencia</th>
+        <th>DevTools</th>
+        <th>Complejidad</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>`useState`</td>
+        <td>Estado local de un componente</td>
+        <td>Solo el componente</td>
+        <td>No</td>
+        <td>React DevTools</td>
+        <td><span style="color: var(--accent-green);">Baja</span></td>
+      </tr>
+      <tr>
+        <td>`useReducer`</td>
+        <td>Estado complejo con múltiples transiciones</td>
+        <td>Solo el componente</td>
+        <td>No</td>
+        <td>React DevTools</td>
+        <td><span style="color: var(--accent-yellow);">Media</span></td>
+      </tr>
+      <tr>
+        <td>`Context`</td>
+        <td>Datos compartidos de baja frecuencia (tema, auth)</td>
+        <td>Todos los consumidores</td>
+        <td>No</td>
+        <td>React DevTools</td>
+        <td><span style="color: var(--accent-yellow);">Media</span></td>
+      </tr>
+      <tr>
+        <td>`Zustand`</td>
+        <td>Estado global de alta frecuencia</td>
+        <td>Solo suscriptores activos</td>
+        <td>Plugin persist</td>
+        <td>Zustand DevTools</td>
+        <td><span style="color: var(--accent-cyan);">Baja-Media</span></td>
+      </tr>
+      <tr>
+        <td>`Jotai`</td>
+        <td>Estado atómico distribuido</td>
+        <td>Solo átomos suscritos</td>
+        <td>Plugin persist</td>
+        <td>Jotai DevTools</td>
+        <td><span style="color: var(--accent-cyan);">Baja-Media</span></td>
+      </tr>
+      <tr>
+        <td>`Redux Toolkit`</td>
+        <td>Apps enterprise con lógica compleja</td>
+        <td>Selectores memoizados</td>
+        <td>Redux Persist</td>
+        <td>Redux DevTools</td>
+        <td><span style="color: var(--accent-red);">Alta</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<Callout type="warning" title="Context y rendimiento">
+  Cada vez que el valor de un Context cambia, **todos** los componentes que lo consumen
+  se re-renderizan. Para estado que cambia frecuentemente (posición del mouse, contadores),
+  usa Zustand o Jotai en su lugar.
+</Callout>
+</section>
+
+<section id="component-patterns">
+<h2 class="doc-article__h2" id="component-patterns">Component Patterns <span class="doc-article__badge">Arquitectura</span></h2>
+
+Patrones avanzados de composición para crear componentes flexibles, reutilizables y mantenibles.
+
+### Compound Components
+
+Componentes que comparten estado implícitamente a través de Context. Es el patrón que usan bibliotecas como Radix UI, Headless UI y Reach UI.
+
+```tsx
+import { createContext, useContext, useState, type ReactNode } from 'react';
+
+// Context interno del componente
+interface AccordionContext {
+  activeItem: string | null;
+  toggle: (id: string) => void;
+}
+
+const AccordionCtx = createContext<AccordionContext | null>(null);
+
+function useAccordion() {
+  const ctx = useContext(AccordionCtx);
+  if (!ctx) throw new Error('Accordion.Item debe estar dentro de Accordion');
+  return ctx;
+}
+
+// Componente raíz
+function Accordion({ children }: { children: ReactNode }) {
+  const [activeItem, setActiveItem] = useState<string | null>(null);
+
+  const toggle = (id: string) => {
+    setActiveItem((prev) => (prev === id ? null : id));
+  };
+
+  return (
+    <AccordionCtx.Provider value={{ activeItem, toggle }}>
+      <div className="accordion">{children}</div>
+    </AccordionCtx.Provider>
+  );
+}
+
+// Sub-componentes
+function AccordionItem({ id, children }: { id: string; children: ReactNode }) {
+  const { activeItem } = useAccordion();
+  return (
+    <div className={`accordion-item ${activeItem === id ? 'active' : ''}`}>
+      {children}
+    </div>
+  );
+}
+
+function AccordionTrigger({ id, children }: { id: string; children: ReactNode }) {
+  const { toggle } = useAccordion();
+  return (
+    <button onClick={() => toggle(id)} className="accordion-trigger">
+      {children}
+    </button>
+  );
+}
+
+function AccordionContent({ id, children }: { id: string; children: ReactNode }) {
+  const { activeItem } = useAccordion();
+  if (activeItem !== id) return null;
+  return <div className="accordion-content">{children}</div>;
+}
+
+// Asignar sub-componentes al componente raíz
+Accordion.Item = AccordionItem;
+Accordion.Trigger = AccordionTrigger;
+Accordion.Content = AccordionContent;
+
+// Uso -- API limpia y declarativa
+function FAQ() {
+  return (
+    <Accordion>
+      <Accordion.Item id="q1">
+        <Accordion.Trigger id="q1">¿Qué es React?</Accordion.Trigger>
+        <Accordion.Content id="q1">
+          Una biblioteca para construir interfaces de usuario.
+        </Accordion.Content>
+      </Accordion.Item>
+      <Accordion.Item id="q2">
+        <Accordion.Trigger id="q2">¿Y Next.js?</Accordion.Trigger>
+        <Accordion.Content id="q2">
+          Un framework full-stack basado en React.
+        </Accordion.Content>
+      </Accordion.Item>
+    </Accordion>
+  );
+}
+```
+
+### Render Props
+
+Permite inyectar lógica en un componente hijo mediante una función. Útil cuando necesitas compartir lógica sin crear un hook.
+
+```tsx
+interface MousePosition {
+  x: number;
+  y: number;
+}
+
+function MouseTracker({
+  children,
+}: {
+  children: (pos: MousePosition) => React.ReactNode;
+}) {
+  const [position, setPosition] = useState<MousePosition>({ x: 0, y: 0 });
+
+  return (
+    <div
+      onMouseMove={(e) =>
+        setPosition({ x: e.clientX, y: e.clientY })
+      }
+      style={{ height: '100%' }}
+    >
+      {children(position)}
+    </div>
+  );
+}
+
+// Uso
+<MouseTracker>
+  {({ x, y }) => (
+    <div className="cursor-info">
+      Posición: {x}, {y}
+    </div>
+  )}
+</MouseTracker>
+```
+
+### Componentes polimórficos (prop `as`)
+
+Permite que un componente renderice diferentes elementos HTML manteniendo los tipos correctos. Es el patrón que usan Chakra UI y Styled Components.
+
+```tsx
+import { type ElementType, type ComponentPropsWithoutRef } from 'react';
+
+type ButtonProps<T extends ElementType = 'button'> = {
+  as?: T;
+  variant?: 'primary' | 'secondary' | 'ghost';
+} & ComponentPropsWithoutRef<T>;
+
+function Button<T extends ElementType = 'button'>({
+  as,
+  variant = 'primary',
+  className,
+  ...props
+}: ButtonProps<T>) {
+  const Component = as || 'button';
+  return (
+    <Component
+      className={`btn btn--${variant} ${className ?? ''}`}
+      {...props}
+    />
+  );
+}
+
+// Uso -- renderiza un <button>
+<Button variant="primary" onClick={handleClick}>
+  Guardar
+</Button>
+
+// Uso -- renderiza un <a> con las props correctas de un anchor
+<Button as="a" href="/docs" variant="ghost">
+  Ver documentación
+</Button>
+
+// Uso -- renderiza un Link de Next.js
+<Button as={Link} href="/dashboard" variant="secondary">
+  Dashboard
+</Button>
+```
+
+### Higher-Order Components (HOC)
+
+Los HOC envuelven un componente para agregar funcionalidad. Aunque los hooks han reemplazado muchos casos de uso, los HOC siguen siendo útiles para concerns transversales como autenticación.
+
+```tsx
+import { useRouter } from 'next/navigation';
+
+function withAuth<P extends object>(
+  WrappedComponent: React.ComponentType<P>
+) {
+  return function AuthenticatedComponent(props: P) {
+    const router = useRouter();
+    const { user, isLoading } = useAuth();
+
+    if (isLoading) return <FullPageSpinner />;
+    if (!user) {
+      router.replace('/login');
+      return null;
+    }
+
+    return <WrappedComponent {...props} />;
+  };
+}
+
+// Uso
+const ProtectedDashboard = withAuth(Dashboard);
+```
+
+<Callout type="info" title="Cuándo usar cada patrón">
+  Usa **Compound Components** para APIs declarativas (accordions, tabs, selects).
+  Usa **hooks** para compartir lógica sin UI.
+  Usa **polimórficos** para componentes base del design system.
+  Usa **HOC** solo para concerns transversales que envuelven páginas completas.
+</Callout>
+</section>
+
+<section id="error-handling">
+<h2 class="doc-article__h2" id="error-handling">Error Handling <span class="doc-article__badge">Resiliencia</span></h2>
+
+Un manejo de errores robusto es lo que separa un prototipo de una aplicación de producción. React ofrece Error Boundaries para capturar errores en el árbol de componentes.
+
+### Error Boundary con react-error-boundary
+
+La biblioteca `react-error-boundary` simplifica enormemente el patrón de Error Boundaries sin necesidad de clases.
+
+```tsx
+import { ErrorBoundary, type FallbackProps } from 'react-error-boundary';
+
+// Componente de fallback reutilizable
+function ErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
+  return (
+    <div role="alert" className="error-panel">
+      <h2>Algo salió mal</h2>
+      <pre className="error-message">{error.message}</pre>
+      <button onClick={resetErrorBoundary}>Intentar de nuevo</button>
+    </div>
+  );
+}
+
+// Uso -- envuelve secciones de la app
+function App() {
+  return (
+    <ErrorBoundary
+      FallbackComponent={ErrorFallback}
+      onReset={() => {
+        // Limpiar estado que causó el error
+        queryClient.clear();
+      }}
+      onError={(error, info) => {
+        // Enviar a servicio de monitoreo
+        Sentry.captureException(error, {
+          extra: { componentStack: info.componentStack },
+        });
+      }}
+    >
+      <Dashboard />
+    </ErrorBoundary>
+  );
+}
+```
+
+### Error Boundary como clase (referencia)
+
+Para entender cómo funciona internamente o si no puedes usar dependencias externas:
+
+```tsx
+import { Component, type ErrorInfo, type ReactNode } from 'react';
+
+interface Props {
+  children: ReactNode;
+  fallback: ReactNode;
+}
+
+interface State {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<Props, State> {
+  state: State = { hasError: false, error: null };
+
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Error capturado por boundary:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) return this.props.fallback;
+    return this.props.children;
+  }
+}
+```
+
+### Suspense para estados de carga
+
+Suspense permite declarar estados de carga de forma limpia, separando el "qué mostrar mientras carga" del componente que carga datos.
+
+```tsx
+import { Suspense } from 'react';
+
+// Con React Query y suspense: true
+function UserProfile({ userId }: { userId: string }) {
+  const { data: user } = useSuspenseQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  });
+
+  // Aquí `user` siempre existe -- Suspense maneja el loading
+  return <h1>{user.name}</h1>;
+}
+
+// Layout con Suspense boundaries anidados
+function ProfilePage({ userId }: { userId: string }) {
+  return (
+    <div className="profile-layout">
+      <Suspense fallback={<HeaderSkeleton />}>
+        <UserProfile userId={userId} />
+      </Suspense>
+
+      <Suspense fallback={<PostsGridSkeleton />}>
+        <UserPosts userId={userId} />
+      </Suspense>
+
+      <Suspense fallback={<ActivitySkeleton />}>
+        <UserActivity userId={userId} />
+      </Suspense>
+    </div>
+  );
+}
+```
+
+### Patrón de recuperación global
+
+Combina Error Boundaries, Suspense y React Query para un manejo de errores consistente en toda la aplicación.
+
+```tsx
+import { QueryErrorResetBoundary } from '@tanstack/react-query';
+import { ErrorBoundary } from 'react-error-boundary';
+import { Suspense } from 'react';
+
+function QueryBoundary({ children }: { children: React.ReactNode }) {
+  return (
+    <QueryErrorResetBoundary>
+      {({ reset }) => (
+        <ErrorBoundary
+          onReset={reset}
+          FallbackComponent={({ error, resetErrorBoundary }) => (
+            <div className="error-card">
+              <p>Error: {error.message}</p>
+              <button onClick={resetErrorBoundary}>
+                Reintentar
+              </button>
+            </div>
+          )}
+        >
+          <Suspense fallback={<LoadingSkeleton />}>
+            {children}
+          </Suspense>
+        </ErrorBoundary>
+      )}
+    </QueryErrorResetBoundary>
+  );
+}
+
+// Uso -- envuelve cualquier sección que haga data fetching
+<QueryBoundary>
+  <UserDashboard />
+</QueryBoundary>
+```
+
+<Callout type="warning" title="Limitaciones de Error Boundaries">
+  Los Error Boundaries NO capturan errores en: event handlers (usa try/catch),
+  código asíncrono fuera de Suspense, errores en el propio boundary,
+  ni errores durante SSR.
+</Callout>
+</section>
+
+<section id="performance">
+<h2 class="doc-article__h2" id="performance">Performance <span class="doc-article__badge">Optimización</span></h2>
+
+La optimización prematura es la raíz de todo mal, pero hay patrones que debes aplicar por defecto para evitar re-renders innecesarios.
+
+### Memoización estratégica
+
+```typescript
+// Memo para componentes costosos en listas
+const ExpensiveRow = React.memo(({ item }: { item: Item }) => {
+  return (
+    <div className="row">
+      <Chart data={item.data} />
+      <span>{item.label}</span>
+    </div>
+  );
+});
+
+// useMemo para cálculos derivados costosos
+const sortedItems = useMemo(
+  () => [...items].sort((a, b) => b.score - a.score),
+  [items]
+);
+```
+
+### useCallback -- cuándo realmente lo necesitas
+
+`useCallback` memoriza funciones. Solo es útil cuando la función se pasa como prop a un componente memoizado o como dependencia de un efecto.
+
+```typescript
+// MAL -- useCallback sin razón, el componente hijo no está memoizado
+function Parent() {
+  const handleClick = useCallback(() => {
+    console.log('click');
+  }, []);
+  return <button onClick={handleClick}>Click</button>;
+}
+
+// BIEN -- el hijo está memoizado, evitamos re-render innecesario
+const ExpensiveChild = React.memo(({ onSelect }: {
+  onSelect: (id: string) => void
+}) => {
+  return <HeavyList onItemSelect={onSelect} />;
+});
+
+function Parent() {
+  const handleSelect = useCallback((id: string) => {
+    setSelectedId(id);
+  }, []);
+
+  return <ExpensiveChild onSelect={handleSelect} />;
+}
+
+// BIEN -- la función es dependencia de un efecto
+function Search({ query }: { query: string }) {
+  const fetchResults = useCallback(async () => {
+    const res = await fetch(`/api/search?q=${query}`);
+    return res.json();
+  }, [query]);
+
+  useEffect(() => {
+    fetchResults().then(setResults);
+  }, [fetchResults]);
+}
+```
+
+### Code Splitting con React.lazy
+
+Divide tu bundle para cargar componentes pesados solo cuando se necesitan.
+
+```typescript
+import { lazy, Suspense } from 'react';
+
+// Carga diferida de componentes pesados
+const MarkdownEditor = lazy(() => import('./MarkdownEditor'));
+const ChartDashboard = lazy(() => import('./ChartDashboard'));
+const AdminPanel = lazy(() => import('./AdminPanel'));
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route
+        path="/editor"
+        element={
+          <Suspense fallback={<PageSkeleton />}>
+            <MarkdownEditor />
+          </Suspense>
+        }
+      />
+      <Route
+        path="/charts"
+        element={
+          <Suspense fallback={<PageSkeleton />}>
+            <ChartDashboard />
+          </Suspense>
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          <Suspense fallback={<PageSkeleton />}>
+            <AdminPanel />
+          </Suspense>
+        }
+      />
+    </Routes>
+  );
+}
+```
+
+### Virtualización con @tanstack/react-virtual
+
+Renderiza solo los elementos visibles en listas muy largas. Esencial cuando manejas miles de registros.
+
+```tsx
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useRef } from 'react';
+
+function VirtualList({ items }: { items: Item[] }) {
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 60,   // altura estimada de cada fila en px
+    overscan: 5,               // renderizar 5 items extra fuera del viewport
+  });
+
+  return (
+    <div
+      ref={parentRef}
+      style={{ height: '500px', overflow: 'auto' }}
+    >
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          position: 'relative',
+        }}
+      >
+        {virtualizer.getVirtualItems().map((virtualRow) => (
+          <div
+            key={virtualRow.key}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: `${virtualRow.size}px`,
+              transform: `translateY(${virtualRow.start}px)`,
+            }}
+          >
+            <ItemRow item={items[virtualRow.index]} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+### Tips para React DevTools Profiler
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Acción</th>
+        <th>Cómo</th>
+        <th>Qué buscar</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Detectar re-renders</td>
+        <td>Activar "Highlight updates" en DevTools</td>
+        <td>Componentes que parpadean sin cambios reales</td>
+      </tr>
+      <tr>
+        <td>Medir render time</td>
+        <td>Pestaña Profiler → grabar interacción</td>
+        <td>Componentes con barras amarillas o rojas ({'>'}16ms)</td>
+      </tr>
+      <tr>
+        <td>Encontrar causa del render</td>
+        <td>Click en componente → "Why did this render?"</td>
+        <td>Props o hooks que cambiaron innecesariamente</td>
+      </tr>
+      <tr>
+        <td>Detectar renders en cascada</td>
+        <td>Flamegraph → buscar renders "anchos"</td>
+        <td>Un padre re-renderiza muchos hijos sin cambios</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<Callout type="warning" title="No abuses de useMemo/useCallback">
+  Ambos hooks tienen un coste de memoria y complejidad. Úsalos solo cuando:
+  el cálculo sea realmente costoso ({'>'}1ms), el valor se pasa como prop a un
+  componente `memo()`, o la función es dependencia de un useEffect.
+</Callout>
+</section>
+
+<section id="testing">
+<h2 class="doc-article__h2" id="testing">Testing <span class="doc-article__badge">Vitest + RTL</span></h2>
+
+Usamos **Vitest** + **Testing Library**. Los tests deben simular comportamiento de usuario, no detalles de implementación.
+
+### Test básico de componente
+
+```typescript
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { expect, test } from 'vitest';
+import Counter from './Counter';
+
+test('incrementa el contador al hacer click', async () => {
+  const user = userEvent.setup();
+  render(<Counter />);
+
+  const button = screen.getByRole('button', { name: /incrementar/i });
+  await user.click(button);
+
+  expect(
+    screen.getByText('Count: 1')
+  ).toBeInTheDocument();
+});
+```
+
+### Testing hooks con renderHook
+
+Testa hooks personalizados de forma aislada sin necesidad de un componente contenedor.
+
+```typescript
+import { renderHook, act } from '@testing-library/react';
+import { expect, test } from 'vitest';
+import useDebounce from './useDebounce';
+
+test('devuelve el valor después del delay', async () => {
+  vi.useFakeTimers();
+
+  const { result, rerender } = renderHook(
+    ({ value, delay }) => useDebounce(value, delay),
+    { initialProps: { value: 'hola', delay: 300 } }
+  );
+
+  // Valor inicial inmediato
+  expect(result.current).toBe('hola');
+
+  // Cambiar valor
+  rerender({ value: 'mundo', delay: 300 });
+
+  // Todavía no ha pasado el delay
+  expect(result.current).toBe('hola');
+
+  // Avanzar el timer
+  act(() => {
+    vi.advanceTimersByTime(300);
+  });
+
+  // Ahora sí refleja el nuevo valor
+  expect(result.current).toBe('mundo');
+
+  vi.useRealTimers();
+});
+
+test('useLocalStorage persiste y recupera valores', () => {
+  const { result } = renderHook(() =>
+    useLocalStorage('test-key', 'default')
+  );
+
+  expect(result.current[0]).toBe('default');
+
+  act(() => {
+    result.current[1]('nuevo valor');
+  });
+
+  expect(result.current[0]).toBe('nuevo valor');
+  expect(localStorage.getItem('test-key')).toBe('"nuevo valor"');
+});
+```
+
+### MSW para mock de APIs
+
+Mock Service Worker intercepta peticiones a nivel de red, sin modificar el código de producción. Ideal para tests de integración.
+
+```typescript
+// mocks/handlers.ts
+import { http, HttpResponse } from 'msw';
+
+export const handlers = [
+  http.get('/api/users', () => {
+    return HttpResponse.json([
+      { id: '1', name: 'Ana', email: 'ana@test.com' },
+      { id: '2', name: 'Carlos', email: 'carlos@test.com' },
+    ]);
+  }),
+
+  http.post('/api/users', async ({ request }) => {
+    const body = await request.json();
+    return HttpResponse.json(
+      { id: '3', ...body },
+      { status: 201 }
+    );
+  }),
+
+  http.get('/api/users/:id', ({ params }) => {
+    if (params.id === '999') {
+      return HttpResponse.json(
+        { message: 'Usuario no encontrado' },
+        { status: 404 }
+      );
+    }
+    return HttpResponse.json({
+      id: params.id,
+      name: 'Ana',
+      email: 'ana@test.com',
+    });
+  }),
+];
+
+// mocks/server.ts
+import { setupServer } from 'msw/node';
+import { handlers } from './handlers';
+
+export const server = setupServer(...handlers);
+```
+
+Configurar en Vitest:
+
+```typescript
+// vitest.setup.ts
+import { beforeAll, afterAll, afterEach } from 'vitest';
+import { server } from './mocks/server';
+
+beforeAll(() => server.listen());
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
+```
+
+Test de integración con MSW:
+
+```typescript
+import { render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { test, expect } from 'vitest';
+import UserList from './UserList';
+
+function renderWithProviders(ui: React.ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+  );
+}
+
+test('muestra la lista de usuarios desde la API', async () => {
+  renderWithProviders(<UserList />);
+
+  // Espera a que carguen los datos (MSW responde automáticamente)
+  await waitFor(() => {
+    expect(screen.getByText('Ana')).toBeInTheDocument();
+    expect(screen.getByText('Carlos')).toBeInTheDocument();
+  });
+});
+```
+
+### Testing de componentes asíncronos
+
+```typescript
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { server } from './mocks/server';
+import { http, HttpResponse } from 'msw';
+
+test('muestra error cuando la API falla', async () => {
+  // Sobreescribir handler para este test específico
+  server.use(
+    http.get('/api/users', () => {
+      return HttpResponse.json(
+        { message: 'Error interno del servidor' },
+        { status: 500 }
+      );
+    })
+  );
+
+  renderWithProviders(<UserList />);
+
+  await waitFor(() => {
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByText(/error/i)).toBeInTheDocument();
+  });
+});
+
+test('crea un usuario y actualiza la lista', async () => {
+  const user = userEvent.setup();
+  renderWithProviders(<CreateUserForm />);
+
+  await user.type(screen.getByLabelText(/nombre/i), 'María');
+  await user.type(screen.getByLabelText(/email/i), 'maria@test.com');
+  await user.click(screen.getByRole('button', { name: /guardar/i }));
+
+  await waitFor(() => {
+    expect(screen.getByText(/usuario creado/i)).toBeInTheDocument();
+  });
+});
+```
+
+### Snapshot vs Behavioral Testing
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Aspecto</th>
+        <th>Snapshot Testing</th>
+        <th>Behavioral Testing</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Qué valida</td>
+        <td>Estructura del output renderizado</td>
+        <td>Comportamiento y lógica del componente</td>
+      </tr>
+      <tr>
+        <td>Mantenimiento</td>
+        <td><span style="color: var(--accent-red);">Alto</span> -- cualquier cambio visual rompe el test</td>
+        <td><span style="color: var(--accent-green);">Bajo</span> -- solo rompe si cambia la funcionalidad</td>
+      </tr>
+      <tr>
+        <td>Confianza</td>
+        <td><span style="color: var(--accent-yellow);">Media</span> -- fácil hacer "update snapshot" sin revisar</td>
+        <td><span style="color: var(--accent-green);">Alta</span> -- verifica lo que el usuario experimenta</td>
+      </tr>
+      <tr>
+        <td>Mejor para</td>
+        <td>Componentes estáticos, iconos, layouts fijos</td>
+        <td>Formularios, interacciones, lógica de negocio</td>
+      </tr>
+      <tr>
+        <td>Recomendación</td>
+        <td>Usar con moderación y en componentes estables</td>
+        <td><span style="color: var(--accent-green);">Preferir siempre</span> para lógica de negocio</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+```typescript
+// Snapshot -- útil para componentes de UI estáticos
+test('renderiza el icono de alerta correctamente', () => {
+  const { container } = render(<AlertIcon type="warning" />);
+  expect(container).toMatchSnapshot();
+});
+
+// Behavioral (preferido) -- valida lo que importa
+test('muestra alerta de tipo warning con el mensaje correcto', () => {
+  render(<Alert type="warning" message="Disco casi lleno" />);
+
+  const alert = screen.getByRole('alert');
+  expect(alert).toHaveTextContent('Disco casi lleno');
+  expect(alert).toHaveClass('alert--warning');
+});
+```
+
+<Callout type="info" title="Cobertura mínima">
+  Apunta a un 80% de cobertura en lógica de negocio. Los componentes de
+  presentación pura no necesitan tests unitarios -- valida con tests visuales.
+  Prioriza tests de integración (componente + API mock) sobre tests unitarios aislados.
+</Callout>
+</section>

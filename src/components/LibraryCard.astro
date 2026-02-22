@@ -1,7 +1,7 @@
 ---
 /**
  * LibraryCard — "Sticky-note" style card for a documentation topic.
- * Accepts topic metadata and renders with the appropriate accent color.
+ * Now renders as an <a> link instead of a button div.
  */
 interface Props {
   id: string;
@@ -14,6 +14,7 @@ interface Props {
 }
 
 const { id, title, category, categoryColor, icon, description, tags } = Astro.props;
+const baseUrl = import.meta.env.BASE_URL;
 
 const colorMap = {
   cyan:   { css: 'var(--accent-cyan)',   cls: 'card--cyan'   },
@@ -28,13 +29,12 @@ const colorMap = {
 const color = colorMap[categoryColor];
 ---
 
-<article
+<a
+  href={`${baseUrl}doc/${id}`}
   class={`card sticky-note ${color.cls}`}
   data-topic-id={id}
   data-category={category}
   data-searchable={`${title} ${description} ${tags.join(' ')}`.toLowerCase()}
-  tabindex="0"
-  role="button"
   aria-label={`Abrir documentación: ${title}`}
 >
   <div class="card__header">
@@ -50,15 +50,18 @@ const color = colorMap[categoryColor];
       <span class="card__tag">{tag}</span>
     ))}
   </div>
-</article>
+</a>
 
 <style>
   .card {
+    display: block;
     padding: 1.5rem;
     position: relative;
     cursor: pointer;
     border-top: 4px solid var(--border-default);
     transition: transform 0.3s ease, box-shadow 0.3s ease;
+    text-decoration: none;
+    color: inherit;
   }
 
   .card:hover,

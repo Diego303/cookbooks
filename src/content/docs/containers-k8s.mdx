@@ -1,0 +1,837 @@
+---
+title: "Containers & K8s"
+description: "Docker, Kubernetes, Helm charts y orquestación de servicios en producción."
+intro: "Guía exhaustiva de containerización con Docker y orquestación con Kubernetes. Desde la construcción de imágenes optimizadas hasta deployments en producción con Helm, monitoring y logging centralizado."
+category: "DEVOPS"
+categoryColor: "yellow"
+icon: "container"
+tags: ["Docker", "K8s", "Helm"]
+breadcrumb: ["Docs", "DevOps", "Containers & K8s"]
+order: 4
+toc:
+  - { id: "docker-fundamentals", label: "Docker Fundamentals" }
+  - { id: "dockerfile-best-practices", label: "Dockerfile Best Practices" }
+  - { id: "k8s-architecture", label: "K8s Architecture" }
+  - { id: "deployments-services", label: "Deployments & Services" }
+  - { id: "helm-charts", label: "Helm Charts" }
+  - { id: "monitoring-logging", label: "Monitoring & Logging" }
+  - { id: "docker-compose", label: "Docker Compose" }
+  - { id: "secrets-config", label: "Secrets & ConfigMaps" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="docker-fundamentals">
+<h2 class="doc-article__h2" id="docker-fundamentals">Docker Fundamentals</h2>
+
+Docker encapsula aplicaciones y sus dependencias en **contenedores**
+aislados que se ejecutan de forma identica en cualquier entorno. La capa de
+abstraccion se basa en namespaces y cgroups de Linux.
+
+```text
+Arquitectura de Docker
+
+┌───────────────────────────────────────────────────┐
+│                 Docker Host                        │
+│                                                   │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐           │
+│  │  App A  │  │  App B  │  │  App C  │           │
+│  │ Python  │  │  Node  │  │  Go    │           │
+│  └────┬────┘  └────┬────┘  └────┬────┘           │
+│       │            │            │                 │
+│  ┌────▼────────────▼────────────▼────┐            │
+│  │         Docker Engine              │            │
+│  │   (containerd + runc)             │            │
+│  └───────────────┬───────────────────┘            │
+│                  │                                │
+│  ┌───────────────▼───────────────────┐            │
+│  │        Linux Kernel                │            │
+│  │   namespaces │ cgroups │ overlay  │            │
+│  └───────────────────────────────────┘            │
+└───────────────────────────────────────────────────┘
+```
+
+### Comandos esenciales
+
+```bash
+# Construir imagen
+docker build -t myapp:1.0.0 .
+
+# Ejecutar contenedor
+docker run -d --name myapp \
+  -p 8000:8000 \
+  -e DATABASE_URL=postgresql://... \
+  -v ./data:/app/data \
+  myapp:1.0.0
+
+# Inspeccionar contenedor en ejecucion
+docker logs -f myapp
+docker exec -it myapp /bin/sh
+
+# Limpiar recursos no usados
+docker system prune -a --volumes
+```
+</section>
+
+<section id="dockerfile-best-practices">
+<h2 class="doc-article__h2" id="dockerfile-best-practices">Dockerfile Best Practices</h2>
+
+Un Dockerfile optimizado reduce el tamano de la imagen, acelera los builds y
+minimiza la superficie de ataque. Multi-stage builds son la clave.
+
+### Multi-stage build para Python
+
+```dockerfile
+# ======= Stage 1: Builder =======
+FROM python:3.12-slim AS builder
+
+WORKDIR /build
+
+# Instalar dependencias de compilacion
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copiar SOLO requirements primero (mejor cache)
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# ======= Stage 2: Runtime =======
+FROM python:3.12-slim AS runtime
+
+# Crear usuario no-root
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+WORKDIR /app
+
+# Copiar dependencias pre-construidas
+COPY --from=builder /install /usr/local
+
+# Copiar codigo fuente
+COPY . .
+
+# Configurar usuario y puerto
+USER appuser
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+<Callout type="tip" title="Reglas de oro">
+  1. <strong>Copiar requirements primero</strong> — aprovecha la cache de capas<br/>
+  2. <strong>Multi-stage</strong> — la imagen final no incluye compiladores<br/>
+  3. <strong>Usuario no-root</strong> — nunca ejecutar como root en produccion<br/>
+  4. <strong>.dockerignore</strong> — excluir .git, __pycache__, .env, node_modules
+</Callout>
+
+### .dockerignore
+
+```text
+.git
+.gitignore
+__pycache__
+*.pyc
+.env
+.venv
+node_modules
+*.md
+tests/
+.coverage
+```
+</section>
+
+<section id="k8s-architecture">
+<h2 class="doc-article__h2" id="k8s-architecture">K8s Architecture</h2>
+
+Kubernetes orquesta contenedores a escala. El **Control Plane** toma
+decisiones globales, y los **Worker Nodes** ejecutan los pods.
+
+```text
+Arquitectura de Kubernetes
+
+┌─────────────────────────────────────────────────────────────────┐
+│                       CONTROL PLANE                             │
+│                                                                 │
+│  ┌──────────┐  ┌────────────────┐  ┌────────────┐  ┌────────┐  │
+│  │API Server│  │Controller Mgr  │  │ Scheduler │  │  etcd  │  │
+│  │  :6443   │  │ Deployment Ctrl│  │            │  │  (KV)  │  │
+│  │          │  │ ReplicaSet Ctrl│  │            │  │        │  │
+│  └────┬─────┘  └────────────────┘  └────────────┘  └────────┘  │
+│       │                                                         │
+└───────┼─────────────────────────────────────────────────────────┘
+        │ kubelet API
+┌───────▼─────────────────────────────────────────────────────────┐
+│                      WORKER NODE 1                             │
+│                                                                 │
+│  ┌──────────┐     ┌─────────────────────────────────────────┐   │
+│  │ kubelet  │────▶│           Pod                            │   │
+│  └──────────┘     │  ┌───────────┐  ┌───────────┐          │   │
+│  ┌──────────┐     │  │Container A│  │Container B│          │   │
+│  │kube-proxy│     │  │  (app)    │  │ (sidecar) │          │   │
+│  └──────────┘     │  └───────────┘  └───────────┘          │   │
+│                   │  Shared Network · Shared Volumes        │   │
+│                   └─────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Componente</th><th>Responsabilidad</th><th>Puerto</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>API Server</td><td>Gateway de todas las operaciones del cluster</td><td>6443</td></tr>
+      <tr><td>etcd</td><td>Almacenamiento key-value del estado del cluster</td><td>2379</td></tr>
+      <tr><td>Scheduler</td><td>Decide en que nodo se ejecuta cada pod</td><td>10251</td></tr>
+      <tr><td>kubelet</td><td>Agente en cada nodo que gestiona los pods</td><td>10250</td></tr>
+      <tr><td>kube-proxy</td><td>Reglas de red y balanceo en cada nodo</td><td>-</td></tr>
+    </tbody>
+  </table>
+</div>
+</section>
+
+<section id="deployments-services">
+<h2 class="doc-article__h2" id="deployments-services">Deployments & Services</h2>
+
+Un **Deployment** declara el estado deseado de los pods, y el
+controller se encarga de mantenerlo. Un **Service** expone los
+pods a traves de una IP estable.
+
+```yaml
+# deployment.yaml — Aplicacion backend
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-api
+  labels:
+    app: backend
+    version: "1.4.2"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: registry.io/backend:1.4.2
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: backend-secrets
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+# service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-svc
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 80
+      targetPort: 8000
+  type: ClusterIP
+```
+
+<Callout type="warning" title="Probes obligatorias">
+  <strong>readinessProbe</strong> evita enviar trafico a pods que aun no estan listos.
+  <strong>livenessProbe</strong> reinicia pods que se quedan colgados.
+  Sin probes, K8s no puede distinguir un pod sano de uno muerto.
+</Callout>
+</section>
+
+<section id="helm-charts">
+<h2 class="doc-article__h2" id="helm-charts">Helm Charts</h2>
+
+Helm es el *package manager* de Kubernetes. Un chart empaqueta todos los
+manifiestos YAML con valores configurables via `values.yaml`.
+
+```text
+Estructura de un Helm chart
+
+mychart/
+├── Chart.yaml          # Metadatos del chart
+├── values.yaml         # Valores por defecto
+├── templates/
+│   ├── deployment.yaml  # Template con {{ .Values.* }}
+│   ├── service.yaml
+│   ├── ingress.yaml
+│   ├── configmap.yaml
+│   ├── secret.yaml
+│   ├── hpa.yaml           # Horizontal Pod Autoscaler
+│   └── _helpers.tpl      # Template helpers
+└── charts/              # Sub-charts (dependencias)
+```
+
+```bash
+# Instalar chart
+helm install backend ./mychart \
+  -f values-production.yaml \
+  -n production
+
+# Actualizar release
+helm upgrade backend ./mychart \
+  --set image.tag=1.5.0 \
+  -n production
+
+# Rollback
+helm rollback backend 1 -n production
+
+# Ver historial de releases
+helm history backend -n production
+```
+</section>
+
+<section id="monitoring-logging">
+<h2 class="doc-article__h2" id="monitoring-logging">Monitoring & Logging</h2>
+
+Un stack de observabilidad completo en K8s incluye metricas (**Prometheus**),
+dashboards (**Grafana**), y logs centralizados (**Loki** o
+**EFK**).
+
+```text
+Stack de observabilidad
+
+┌──────────────────────────────────────────────────────────────┐
+│                     Grafana Dashboard                       │
+│              (metricas + logs + alertas)                      │
+└──────────┬───────────────────────────────────┬───────────────┘
+           │                                   │
+    ┌──────▼──────┐                    ┌───────▼──────┐
+    │ Prometheus  │                    │    Loki     │
+    │  (metricas) │                    │   (logs)     │
+    └──────┬──────┘                    └───────┬──────┘
+           │ scrape /metrics                  │ push logs
+    ┌──────▼──────────────────────────────────▼──────┐
+    │              Kubernetes Pods                    │
+    │   ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐         │
+    │   │App A│  │App B│  │App C│  │App D│         │
+    │   └─────┘  └─────┘  └─────┘  └─────┘         │
+    └───────────────────────────────────────────────┘
+```
+
+### Prometheus alert rules
+
+```yaml
+# prometheus-rules.yaml
+groups:
+  - name: app-alerts
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          rate(http_requests_total{status=~"5.."}[5m])
+          / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Error rate > 5% for {{ $labels.service }}"
+
+      - alert: PodCrashLooping
+        expr: |
+          rate(kube_pod_container_status_restarts_total[15m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+```
+
+<Callout type="info" title="Metricas clave a monitorear">
+  <strong>RED method</strong>: Rate (requests/sec), Errors (5xx/sec), Duration (latency p99).<br/>
+  <strong>USE method</strong>: Utilization, Saturation, Errors por recurso (CPU, memoria, disco).
+</Callout>
+</section>
+
+<section id="docker-compose">
+<h2 class="doc-article__h2" id="docker-compose">Docker Compose</h2>
+
+Docker Compose permite definir y ejecutar aplicaciones **multi-contenedor**
+con un solo archivo YAML. Es la herramienta estandar para desarrollo local,
+testing de integracion y entornos de staging simples.
+
+```text
+Arquitectura multi-servicio con Compose
+
+┌──────────────────────────────────────────────────────────┐
+│                  Docker Compose Network                   │
+│                                                          │
+│  ┌──────────┐   ┌──────────┐   ┌──────────┐             │
+│  │  nginx   │──▶│   app    │──▶│ postgres │             │
+│  │  :80/443 │   │  :8000   │   │  :5432   │             │
+│  └──────────┘   └────┬─────┘   └──────────┘             │
+│                      │                                    │
+│                      ▼                                    │
+│                ┌──────────┐                               │
+│                │  redis   │                               │
+│                │  :6379   │                               │
+│                └──────────┘                               │
+│                                                          │
+│  Volumes: postgres-data, redis-data, app-static          │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Compose completo para proyecto backend
+
+```yaml
+# docker-compose.yml — Backend con Postgres, Redis y Nginx
+services:
+  # ── Base de datos ──
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secretpass}
+      POSTGRES_DB: appdb
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d appdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - backend-net
+
+  # ── Cache y colas ──
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redispass}
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redispass}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - backend-net
+
+  # ── Aplicacion backend ──
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    environment:
+      DATABASE_URL: postgresql://appuser:${DB_PASSWORD:-secretpass}@postgres:5432/appdb
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redispass}@redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key}
+      ENVIRONMENT: development
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src          # Hot-reload en desarrollo
+      - app-static:/app/static
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - backend-net
+
+  # ── Reverse proxy ──
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - app-static:/var/www/static:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - backend-net
+
+  # ── Worker para tareas asincronas (opcional) ──
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    command: celery -A app.worker worker --loglevel=info --concurrency=4
+    environment:
+      DATABASE_URL: postgresql://appuser:${DB_PASSWORD:-secretpass}@postgres:5432/appdb
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redispass}@redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend-net
+
+volumes:
+  postgres-data:
+  redis-data:
+  app-static:
+
+networks:
+  backend-net:
+    driver: bridge
+```
+
+### Comandos esenciales de Compose
+
+```bash
+# Arrancar todos los servicios en background
+docker compose up -d
+
+# Arrancar solo servicios de infraestructura
+docker compose up -d postgres redis
+
+# Ver logs en tiempo real
+docker compose logs -f app worker
+
+# Reconstruir imagen tras cambios en Dockerfile
+docker compose up -d --build app
+
+# Escalar workers
+docker compose up -d --scale worker=4
+
+# Parar y eliminar contenedores + volumenes
+docker compose down -v
+
+# Ejecutar comando dentro de un servicio
+docker compose exec app python manage.py migrate
+docker compose exec postgres psql -U appuser -d appdb
+```
+
+<Callout type="tip" title="Archivos .env con Compose">
+  Docker Compose lee automaticamente un archivo <code>.env</code> en el directorio del proyecto.
+  Usa <code>${VARIABLE:-default}</code> en el YAML para valores configurables.
+  Nunca commitees el <code>.env</code> real — incluye un <code>.env.example</code> con valores de referencia.
+</Callout>
+
+### Perfiles para separar servicios
+
+```yaml
+# Usar profiles para servicios opcionales
+services:
+  app:
+    # ... configuracion del app
+
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    profiles:
+      - debug           # Solo arranca con --profile debug
+
+  adminer:
+    image: adminer
+    ports:
+      - "8081:8080"
+    profiles:
+      - debug
+
+# Arrancar con perfil: docker compose --profile debug up -d
+```
+</section>
+
+<section id="secrets-config">
+<h2 class="doc-article__h2" id="secrets-config">Secrets & ConfigMaps</h2>
+
+Kubernetes separa la configuracion del codigo mediante **ConfigMaps** (datos
+no sensibles) y **Secrets** (credenciales, tokens, certificados). Ambos se
+pueden montar como variables de entorno o archivos en los pods.
+
+```text
+Flujo de configuracion en K8s
+
+┌─────────────────────────────────────────────────────────┐
+│                         Pod                              │
+│                                                         │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │                  Container                         │  │
+│  │                                                   │  │
+│  │  ENV:                                             │  │
+│  │    DB_HOST=postgres.prod.svc  ← ConfigMap         │  │
+│  │    DB_PORT=5432               ← ConfigMap         │  │
+│  │    DB_PASSWORD=*****          ← Secret            │  │
+│  │    API_KEY=*****              ← Secret            │  │
+│  │                                                   │  │
+│  │  FILES:                                           │  │
+│  │    /etc/app/config.yaml       ← ConfigMap volume  │  │
+│  │    /etc/tls/tls.crt           ← Secret volume     │  │
+│  │    /etc/tls/tls.key           ← Secret volume     │  │
+│  └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Crear y gestionar Secrets
+
+```yaml
+# secret.yaml — Secret para credenciales de base de datos
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backend-db-credentials
+  namespace: production
+type: Opaque
+stringData:                    # stringData acepta texto plano (K8s lo codifica)
+  DB_PASSWORD: "S3cur3P@ssw0rd!"
+  DB_USERNAME: "backend_app"
+---
+# secret-tls.yaml — Secret para certificados TLS
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backend-tls
+  namespace: production
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTi...    # base64 encoded
+  tls.key: LS0tLS1CRUdJTi...    # base64 encoded
+```
+
+```bash
+# Crear secret desde la linea de comandos
+kubectl create secret generic backend-db-credentials \
+  --from-literal=DB_PASSWORD='S3cur3P@ssw0rd!' \
+  --from-literal=DB_USERNAME='backend_app' \
+  -n production
+
+# Crear secret desde archivo
+kubectl create secret generic app-config \
+  --from-file=config.json=./config/production.json \
+  -n production
+
+# Crear secret TLS desde certificados
+kubectl create secret tls backend-tls \
+  --cert=path/to/tls.crt \
+  --key=path/to/tls.key \
+  -n production
+
+# Ver secrets (valores codificados en base64)
+kubectl get secret backend-db-credentials -n production -o yaml
+
+# Decodificar un valor
+kubectl get secret backend-db-credentials -n production \
+  -o jsonpath='{.data.DB_PASSWORD}' | base64 -d
+```
+
+<Callout type="warning" title="Secrets NO son seguros por defecto">
+  Los Secrets de K8s se almacenan en etcd <strong>sin cifrar</strong> por defecto.
+  Habilita <strong>encryption at rest</strong> en el API server, y usa RBAC estricto
+  para limitar quien puede leer secrets. En produccion, considera External Secrets Operator.
+</Callout>
+
+### ConfigMaps para datos no sensibles
+
+```yaml
+# configmap.yaml — Configuracion de la aplicacion
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: production
+data:
+  # Valores simples como key-value
+  DB_HOST: "postgres.production.svc.cluster.local"
+  DB_PORT: "5432"
+  DB_NAME: "appdb"
+  LOG_LEVEL: "info"
+  CACHE_TTL: "300"
+
+  # Archivo de configuracion completo
+  app-config.yaml: |
+    server:
+      host: 0.0.0.0
+      port: 8000
+      workers: 4
+    cors:
+      allowed_origins:
+        - "https://app.example.com"
+        - "https://admin.example.com"
+    features:
+      enable_cache: true
+      enable_rate_limit: true
+      rate_limit_rpm: 100
+```
+
+### Montar en un Pod
+
+```yaml
+# deployment.yaml — Pod usando Secret + ConfigMap
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: registry.io/backend:1.4.2
+          ports:
+            - containerPort: 8000
+
+          # ── Variables de entorno desde ConfigMap ──
+          envFrom:
+            - configMapRef:
+                name: backend-config
+
+          # ── Variables de entorno desde Secret ──
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backend-db-credentials
+                  key: DB_PASSWORD
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: backend-db-credentials
+                  key: DB_USERNAME
+
+          # ── Montar archivos de configuracion ──
+          volumeMounts:
+            - name: app-config-volume
+              mountPath: /etc/app
+              readOnly: true
+            - name: tls-certs
+              mountPath: /etc/tls
+              readOnly: true
+
+      volumes:
+        # ConfigMap como directorio de archivos
+        - name: app-config-volume
+          configMap:
+            name: backend-config
+            items:
+              - key: app-config.yaml
+                path: config.yaml
+
+        # Secret como archivos
+        - name: tls-certs
+          secret:
+            secretName: backend-tls
+```
+
+### External Secrets Operator para produccion
+
+El **External Secrets Operator (ESO)** sincroniza secrets desde proveedores
+externos (AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault) hacia
+Kubernetes Secrets de forma automatica y segura.
+
+```yaml
+# external-secret.yaml — Sincronizar desde AWS Secrets Manager
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: backend-db-credentials
+  namespace: production
+spec:
+  refreshInterval: 1h              # Sincronizar cada hora
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+  target:
+    name: backend-db-credentials   # Secret de K8s que se creara
+    creationPolicy: Owner
+  data:
+    - secretKey: DB_PASSWORD
+      remoteRef:
+        key: production/backend/db
+        property: password
+    - secretKey: DB_USERNAME
+      remoteRef:
+        key: production/backend/db
+        property: username
+---
+# cluster-secret-store.yaml — Configurar el proveedor
+apiVersion: external-secrets.io/v1beta1
+kind: ClusterSecretStore
+metadata:
+  name: aws-secrets-manager
+spec:
+  provider:
+    aws:
+      service: SecretsManager
+      region: eu-west-1
+      auth:
+        jwt:
+          serviceAccountRef:
+            name: external-secrets-sa
+            namespace: external-secrets
+```
+
+<Callout type="info" title="Rotacion automatica de secrets">
+  Con External Secrets Operator, al rotar un secret en AWS/GCP/Vault,
+  el operador actualiza automaticamente el Secret de K8s segun el
+  <code>refreshInterval</code>. Los pods que montan el secret como volumen
+  reciben la actualizacion sin reinicio (con un delay de ~1 min por kubelet sync).
+  Los que usan <code>env</code> necesitan un rollout restart.
+</Callout>
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Metodo</th><th>Caso de uso</th><th>Seguridad</th><th>Rotacion</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>K8s Secret nativo</td><td>Desarrollo, equipos pequenos</td><td>Base64 (no cifrado)</td><td>Manual</td></tr>
+      <tr><td>Sealed Secrets</td><td>GitOps (secrets cifrados en Git)</td><td>Cifrado asimetrico</td><td>Manual</td></tr>
+      <tr><td>External Secrets Operator</td><td>Produccion, compliance</td><td>Proveedor externo cifrado</td><td>Automatica</td></tr>
+      <tr><td>HashiCorp Vault + CSI</td><td>Seguridad avanzada, auditoria</td><td>Vault policies + audit</td><td>Automatica + lease</td></tr>
+    </tbody>
+  </table>
+</div>
+</section>

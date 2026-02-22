@@ -1,0 +1,1588 @@
+---
+title: "Design System"
+description: "Galería de componentes visuales, tokens de color y guías de accesibilidad."
+intro: "Guía completa de tokens de diseño, tipografía y componentes del sistema visual \"Engineering Notebook\". Todos los valores están disponibles como CSS custom properties."
+category: "UI KIT"
+categoryColor: "pink"
+icon: "palette"
+tags: ["Storybook", "Figma"]
+breadcrumb: ["Docs", "UI", "Design System"]
+order: 3
+toc:
+  - { id: "color-tokens", label: "Color Tokens" }
+  - { id: "typography", label: "Typography" }
+  - { id: "spacing-layout", label: "Spacing & Layout" }
+  - { id: "shadows-depth", label: "Shadows & Depth" }
+  - { id: "components", label: "Components" }
+  - { id: "animations-transitions", label: "Animations" }
+  - { id: "grid-background", label: "Grid Background" }
+  - { id: "accessibility", label: "Accessibility" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+{/* ================================================================
+    DESIGN SYSTEM — "Engineering Notebook"
+    Referencia definitiva de tokens, tipografía, componentes y patrones.
+    ================================================================ */}
+
+{/* ===================== 1. COLOR TOKENS ===================== */}
+
+<section id="color-tokens">
+<h2 class="doc-article__h2" id="color-tokens">Color Tokens</h2>
+
+La paleta del sistema se organiza en cinco grupos funcionales: **Base** (fondos oscuros),
+**Jerarquía de texto**, **Acentos neón** (estados UI), **Syntax** (resaltado de código)
+y **Bordes**. Cada token se expone como CSS custom property en `:root`.
+
+### Base (The Void)
+
+Fondos del sistema. El color primario `--bg-void` no es negro puro; contiene un tinte
+cálido imperceptible que reduce la fatiga visual en sesiones largas de lectura.
+
+<div class="doc-color-grid">
+  <div class="doc-color-swatch" style={{"--swatch": "#0f0f11"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--bg-void</span>
+    <span class="doc-color-swatch__hex">#0f0f11</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#18181b"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--bg-surface</span>
+    <span class="doc-color-swatch__hex">#18181b</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#27272a"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--bg-surface-hover</span>
+    <span class="doc-color-swatch__hex">#27272a</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#13131599"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--bg-overlay</span>
+    <span class="doc-color-swatch__hex">rgba(15,15,17,0.8)</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#0a0a0a"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--bg-code</span>
+    <span class="doc-color-swatch__hex">#0a0a0a</span>
+  </div>
+</div>
+
+### Jerarquía de Texto
+
+Cinco niveles de luminosidad para establecer jerarquía sin recurrir a tamaño o peso tipográfico.
+
+<div class="doc-color-grid">
+  <div class="doc-color-swatch" style={{"--swatch": "#f4f4f5"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--text-primary</span>
+    <span class="doc-color-swatch__hex">#f4f4f5</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#a1a1aa"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--text-secondary</span>
+    <span class="doc-color-swatch__hex">#a1a1aa</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#71717a"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--text-muted</span>
+    <span class="doc-color-swatch__hex">#71717a</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#52525b"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--text-dim</span>
+    <span class="doc-color-swatch__hex">#52525b</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#3f3f46"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--text-ghost</span>
+    <span class="doc-color-swatch__hex">#3f3f46</span>
+  </div>
+</div>
+
+### Acentos Neón (Estados UI)
+
+Colores de alta saturación reservados para estados interactivos y comunicación semántica.
+Cada acento tiene un significado funcional asociado.
+
+<div class="doc-color-grid">
+  <div class="doc-color-swatch" style={{"--swatch": "#fde047"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--accent-yellow</span>
+    <span class="doc-color-swatch__hex">#fde047</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#f472b6"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--accent-pink</span>
+    <span class="doc-color-swatch__hex">#f472b6</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#22d3ee"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--accent-cyan</span>
+    <span class="doc-color-swatch__hex">#22d3ee</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#86efac"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--accent-green</span>
+    <span class="doc-color-swatch__hex">#86efac</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#fb7185"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--accent-red</span>
+    <span class="doc-color-swatch__hex">#fb7185</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#fb923c"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--accent-orange</span>
+    <span class="doc-color-swatch__hex">#fb923c</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#a78bfa"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--accent-purple</span>
+    <span class="doc-color-swatch__hex">#a78bfa</span>
+  </div>
+</div>
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Token</th>
+        <th>Hex</th>
+        <th>Estado UI</th>
+        <th>Significado Semántico</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>`--accent-yellow`</td>
+        <td>#fde047</td>
+        <td>Focus / Active</td>
+        <td>Atención primaria, subrayador, advertencias</td>
+      </tr>
+      <tr>
+        <td>`--accent-pink`</td>
+        <td>#f472b6</td>
+        <td>Hover</td>
+        <td>Elementos interactivos secundarios, UI decorativa</td>
+      </tr>
+      <tr>
+        <td>`--accent-cyan`</td>
+        <td>#22d3ee</td>
+        <td>Link</td>
+        <td>Enlaces, arquitectura, flujo de datos</td>
+      </tr>
+      <tr>
+        <td>`--accent-green`</td>
+        <td>#86efac</td>
+        <td>Success</td>
+        <td>Validaciones, terminal success, "copiado"</td>
+      </tr>
+      <tr>
+        <td>`--accent-red`</td>
+        <td>#fb7185</td>
+        <td>Error</td>
+        <td>Errores de compilación, alertas críticas</td>
+      </tr>
+      <tr>
+        <td>`--accent-orange`</td>
+        <td>#fb923c</td>
+        <td>Warning</td>
+        <td>Advertencias no críticas, deprecaciones</td>
+      </tr>
+      <tr>
+        <td>`--accent-purple`</td>
+        <td>#a78bfa</td>
+        <td>Decorative</td>
+        <td>Categorías, badges, tags de contenido</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+### Syntax & Code
+
+Tokens para resaltado de sintaxis en bloques de código. El esquema está basado
+en una variante personalizada de Dracula/Monokai adaptada al tema oscuro.
+
+<div class="doc-color-grid">
+  <div class="doc-color-swatch" style={{"--swatch": "#c678dd"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--code-keyword</span>
+    <span class="doc-color-swatch__hex">#c678dd</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#61afef"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--code-func</span>
+    <span class="doc-color-swatch__hex">#61afef</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#98c379"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--code-string</span>
+    <span class="doc-color-swatch__hex">#98c379</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#71717a"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--code-comment</span>
+    <span class="doc-color-swatch__hex">#71717a</span>
+  </div>
+</div>
+
+### Bordes
+
+<div class="doc-color-grid">
+  <div class="doc-color-swatch" style={{"--swatch": "#27272a"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--border-default</span>
+    <span class="doc-color-swatch__hex">#27272a</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#1f1f23"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--border-subtle</span>
+    <span class="doc-color-swatch__hex">#1f1f23</span>
+  </div>
+  <div class="doc-color-swatch" style={{"--swatch": "#3f3f46"}}>
+    <div class="doc-color-swatch__color"></div>
+    <span class="doc-color-swatch__name">--border-strong</span>
+    <span class="doc-color-swatch__hex">#3f3f46</span>
+  </div>
+</div>
+
+### Variables CSS completas
+
+```css
+:root {
+  /* Base (The Void) */
+  --bg-void: #0f0f11;
+  --bg-surface: #18181b;
+  --bg-surface-hover: #27272a;
+  --bg-overlay: rgba(15, 15, 17, 0.8);
+  --bg-code: #0a0a0a;
+
+  /* Text Hierarchy */
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --text-dim: #52525b;
+  --text-ghost: #3f3f46;
+
+  /* Neon Accents */
+  --accent-yellow: #fde047;
+  --accent-pink: #f472b6;
+  --accent-cyan: #22d3ee;
+  --accent-green: #86efac;
+  --accent-red: #fb7185;
+  --accent-orange: #fb923c;
+  --accent-purple: #a78bfa;
+
+  /* Syntax Highlighting */
+  --code-keyword: #c678dd;
+  --code-func: #61afef;
+  --code-string: #98c379;
+  --code-comment: #71717a;
+
+  /* Borders */
+  --border-default: #27272a;
+  --border-subtle: #1f1f23;
+  --border-strong: #3f3f46;
+}
+```
+
+<Callout type="info" title="Uso de acentos">
+  Los colores de acento neón deben usarse exclusivamente sobre fondos oscuros
+  (<code>--bg-void</code> o <code>--bg-surface</code>). Nunca combines dos acentos
+  como fondo + texto entre sí.
+</Callout>
+</section>
+
+{/* ===================== 2. TYPOGRAPHY ===================== */}
+
+<section id="typography">
+<h2 class="doc-article__h2" id="typography">Typography</h2>
+
+El sistema tipográfico utiliza cuatro familias con roles claramente diferenciados.
+La combinación de fuentes técnicas (mono) y manuscritas (hand) refuerza la
+estética de "cuaderno de ingeniero".
+
+### Familias tipográficas
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Fuente</th>
+        <th>Variable CSS</th>
+        <th>Uso principal</th>
+        <th>Ejemplo</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>`Inter`</td>
+        <td>`--font-sans`</td>
+        <td>Body text, headings de documentación</td>
+        <td style={{fontFamily: "var(--font-sans)"}}>The quick brown fox</td>
+      </tr>
+      <tr>
+        <td>`JetBrains Mono`</td>
+        <td>`--font-mono`</td>
+        <td>Código, labels técnicos, rutas, botones</td>
+        <td style={{fontFamily: "var(--font-mono)"}}>const x = 42;</td>
+      </tr>
+      <tr>
+        <td>`Patrick Hand`</td>
+        <td>`--font-hand`</td>
+        <td>Notas al margen, tooltips, comentarios de código</td>
+        <td style={{fontFamily: "var(--font-hand)"}}>Nota al margen!</td>
+      </tr>
+      <tr>
+        <td>`Permanent Marker`</td>
+        <td>`--font-marker`</td>
+        <td>Títulos de sección principales del hero</td>
+        <td style={{fontFamily: "var(--font-marker)"}}>HEADER</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+### Escala de tipos (Type Scale)
+
+Configuración base: **16px** con line-height de **1.6** para lectura prolongada.
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Elemento</th>
+        <th>Fuente</th>
+        <th>Tamaño</th>
+        <th>Peso</th>
+        <th>Tracking</th>
+        <th>Line Height</th>
+        <th>Uso</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>H1 Hero</td>
+        <td>JetBrains Mono</td>
+        <td>48px — 60px</td>
+        <td>700</td>
+        <td>-0.02em</td>
+        <td>1.1</td>
+        <td>Título principal del hero. Estilo técnico impactante.</td>
+      </tr>
+      <tr>
+        <td>H1 Doc</td>
+        <td>Inter</td>
+        <td>36px</td>
+        <td>700</td>
+        <td>-0.01em</td>
+        <td>1.2</td>
+        <td>Título de página de documentación.</td>
+      </tr>
+      <tr>
+        <td>H2</td>
+        <td>Inter</td>
+        <td>24px</td>
+        <td>600</td>
+        <td>-0.01em</td>
+        <td>1.3</td>
+        <td>Secciones principales. Borde inferior opcional.</td>
+      </tr>
+      <tr>
+        <td>H3</td>
+        <td>Inter</td>
+        <td>20px</td>
+        <td>600</td>
+        <td>Normal</td>
+        <td>1.4</td>
+        <td>Sub-secciones dentro de un H2.</td>
+      </tr>
+      <tr>
+        <td>Body</td>
+        <td>Inter</td>
+        <td>16px</td>
+        <td>300 / 400</td>
+        <td>Normal</td>
+        <td>1.6</td>
+        <td>Texto de lectura. Color <code>--text-primary</code>.</td>
+      </tr>
+      <tr>
+        <td>Mono Text</td>
+        <td>JetBrains Mono</td>
+        <td>14px</td>
+        <td>400</td>
+        <td>Normal</td>
+        <td>1.5</td>
+        <td>Rutas, variables inline, fragmentos de código.</td>
+      </tr>
+      <tr>
+        <td>Handwritten</td>
+        <td>Patrick Hand</td>
+        <td>18px — 20px</td>
+        <td>400</td>
+        <td>0.02em</td>
+        <td>1.4</td>
+        <td>Notas al margen, tooltips, comentarios visuales.</td>
+      </tr>
+      <tr>
+        <td>Label / Tag</td>
+        <td>JetBrains Mono</td>
+        <td>12px</td>
+        <td>500</td>
+        <td>0.05em</td>
+        <td>1.2</td>
+        <td>Uppercase. Tags, badges, categorías.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+### Estrategia de carga de fuentes
+
+Todas las fuentes se cargan desde Google Fonts con `display=swap` para evitar
+FOIT (Flash of Invisible Text). El orden de carga prioriza Inter y JetBrains Mono
+como fuentes críticas.
+
+```html
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Patrick+Hand&family=Permanent+Marker&display=swap" rel="stylesheet" />
+```
+
+```css
+:root {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-hand: 'Patrick Hand', cursive;
+  --font-marker: 'Permanent Marker', cursive;
+}
+```
+
+<Callout type="tip" title="Fallbacks del sistema">
+  Cada variable incluye fallbacks del sistema operativo. Si Google Fonts no carga,
+  la experiencia se degrada elegantemente a <code>system-ui</code> para sans-serif
+  y <code>monospace</code> para código.
+</Callout>
+</section>
+
+{/* ===================== 3. SPACING & LAYOUT ===================== */}
+
+<section id="spacing-layout">
+<h2 class="doc-article__h2" id="spacing-layout">Spacing & Layout</h2>
+
+El sistema de espaciado utiliza una escala de 8 niveles basada en `rem` para
+garantizar consistencia y adaptabilidad a diferentes tamaños de pantalla.
+
+### Escala de espaciado
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Token</th>
+        <th>Valor</th>
+        <th>Píxeles (base 16)</th>
+        <th>Uso típico</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>`--space-xs`</td>
+        <td>0.25rem</td>
+        <td>4px</td>
+        <td>Separación entre íconos y texto, padding de badges.</td>
+      </tr>
+      <tr>
+        <td>`--space-sm`</td>
+        <td>0.5rem</td>
+        <td>8px</td>
+        <td>Gaps internos en botones, padding de tags.</td>
+      </tr>
+      <tr>
+        <td>`--space-md`</td>
+        <td>1rem</td>
+        <td>16px</td>
+        <td>Padding estándar de componentes, gap de grids.</td>
+      </tr>
+      <tr>
+        <td>`--space-lg`</td>
+        <td>1.5rem</td>
+        <td>24px</td>
+        <td>Separación entre bloques de contenido.</td>
+      </tr>
+      <tr>
+        <td>`--space-xl`</td>
+        <td>2rem</td>
+        <td>32px</td>
+        <td>Margen entre secciones menores.</td>
+      </tr>
+      <tr>
+        <td>`--space-2xl`</td>
+        <td>3rem</td>
+        <td>48px</td>
+        <td>Separación entre secciones de documentación.</td>
+      </tr>
+      <tr>
+        <td>`--space-3xl`</td>
+        <td>4rem</td>
+        <td>64px</td>
+        <td>Padding vertical de secciones principales.</td>
+      </tr>
+      <tr>
+        <td>`--space-4xl`</td>
+        <td>6rem</td>
+        <td>96px</td>
+        <td>Separación entre el hero y el contenido.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+```css
+:root {
+  --space-xs: 0.25rem;   /* 4px  */
+  --space-sm: 0.5rem;    /* 8px  */
+  --space-md: 1rem;      /* 16px */
+  --space-lg: 1.5rem;    /* 24px */
+  --space-xl: 2rem;      /* 32px */
+  --space-2xl: 3rem;     /* 48px */
+  --space-3xl: 4rem;     /* 64px */
+  --space-4xl: 6rem;     /* 96px */
+}
+```
+
+### Contenedor principal
+
+El contenido de documentación se limita a un ancho máximo para mantener una
+longitud de línea óptima (65-80 caracteres).
+
+```css
+.doc-container {
+  max-width: 72rem;       /* 1152px */
+  margin-inline: auto;
+  padding-inline: var(--space-md);
+}
+```
+
+### Breakpoints responsivos
+
+El sistema utiliza un enfoque **mobile-first** con cuatro breakpoints principales.
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Nombre</th>
+        <th>Min-width</th>
+        <th>Uso</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>`sm`</td>
+        <td>640px</td>
+        <td>Teléfonos en horizontal, ajustes de texto y padding.</td>
+      </tr>
+      <tr>
+        <td>`md`</td>
+        <td>768px</td>
+        <td>Tablets. Se activa la sidebar de navegación.</td>
+      </tr>
+      <tr>
+        <td>`lg`</td>
+        <td>1024px</td>
+        <td>Desktop. Layout de documentación completo (sidebar + contenido).</td>
+      </tr>
+      <tr>
+        <td>`xl`</td>
+        <td>1280px</td>
+        <td>Desktop amplio. Se muestra el Table of Contents a la derecha.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+```css
+/* Ejemplo de uso de breakpoints */
+.doc-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-lg);
+}
+
+@media (min-width: 768px) {
+  .doc-layout {
+    grid-template-columns: 260px 1fr;
+  }
+}
+
+@media (min-width: 1280px) {
+  .doc-layout {
+    grid-template-columns: 260px 1fr 240px;
+  }
+}
+```
+
+### Sistema de grid
+
+El grid interno para tarjetas y galerías utiliza `auto-fill` con tamaño mínimo
+configurable para adaptarse automáticamente al espacio disponible.
+
+```css
+.doc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-lg);
+}
+```
+
+<Callout type="info" title="Unidades relativas">
+  Siempre usa <code>rem</code> para spacing y <code>em</code> para ajustes
+  proporcionales al tamaño de texto. Evita <code>px</code> fijos excepto en
+  bordes y sombras.
+</Callout>
+</section>
+
+{/* ===================== 4. SHADOWS & DEPTH ===================== */}
+
+<section id="shadows-depth">
+<h2 class="doc-article__h2" id="shadows-depth">Shadows & Depth</h2>
+
+En el sistema "Engineering Notebook" **no se utilizan sombras difusas** (con blur).
+Todas las sombras son duras — desplazamiento sólido sin difuminado — para reforzar
+la estética de pegatina, recorte de papel o sticker sobre el cuaderno.
+
+### Escala de sombras
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Token</th>
+        <th>Valor CSS</th>
+        <th>Uso</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>`--shadow-sm`</td>
+        <td>`2px 2px 0 0 #27272a`</td>
+        <td>Botones pequeños, tags, badges.</td>
+      </tr>
+      <tr>
+        <td>`--shadow-md`</td>
+        <td>`4px 4px 0 0 #27272a`</td>
+        <td>Tarjetas, botones primarios, callouts.</td>
+      </tr>
+      <tr>
+        <td>`--shadow-lg`</td>
+        <td>`8px 8px 0 0 #000000`</td>
+        <td>Modales, ventanas flotantes, elementos emergentes.</td>
+      </tr>
+      <tr>
+        <td>`--shadow-neon`</td>
+        <td>`0 0 10px 0 rgba(34,211,238,0.3)`</td>
+        <td>Elementos "encendidos" o activos en diagramas. Única excepción con blur.</td>
+      </tr>
+      <tr>
+        <td>`--shadow-white`</td>
+        <td>`4px 4px 0 0 #ffffff`</td>
+        <td>Botones sobre fondo oscuro. Alto contraste visual.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+```css
+:root {
+  --shadow-sm: 2px 2px 0px 0px #27272a;
+  --shadow-md: 4px 4px 0px 0px #27272a;
+  --shadow-lg: 8px 8px 0px 0px #000000;
+  --shadow-neon: 0px 0px 10px 0px rgba(34, 211, 238, 0.3);
+  --shadow-white: 4px 4px 0px 0px #ffffff;
+}
+```
+
+### Radios de borde (Border Radius)
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Token</th>
+        <th>Valor</th>
+        <th>Uso</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>`--radius-sm`</td>
+        <td>`2px`</td>
+        <td>Botones técnicos, inputs, elementos rectangulares precisos.</td>
+      </tr>
+      <tr>
+        <td>`--radius-md`</td>
+        <td>`4px`</td>
+        <td>Tarjetas estándar, contenedores de código.</td>
+      </tr>
+      <tr>
+        <td>`--radius-lg`</td>
+        <td>`8px`</td>
+        <td>Modales, contenedores grandes.</td>
+      </tr>
+      <tr>
+        <td>`--radius-sketch`</td>
+        <td>`2px 255px 3px 25px / 255px 5px 225px 5px`</td>
+        <td>Efecto mano alzada. Para elementos con estilo "dibujado".</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+```css
+:root {
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-sketch: 2px 255px 3px 25px / 255px 5px 225px 5px;
+}
+
+/* Ejemplo: tarjeta con efecto sketch */
+.card-sketch {
+  border: 2px solid var(--border-default);
+  border-radius: var(--radius-sketch);
+  box-shadow: var(--shadow-md);
+}
+```
+
+<Callout type="warning" title="Sin blur">
+  La única excepción a la regla "sin blur" es <code>--shadow-neon</code>, que se
+  reserva exclusivamente para indicadores activos en diagramas interactivos.
+  Nunca apliques blur a sombras de componentes estándar.
+</Callout>
+</section>
+
+{/* ===================== 5. COMPONENTS ===================== */}
+
+<section id="components">
+<h2 class="doc-article__h2" id="components">Components</h2>
+
+Especificaciones detalladas de cada componente del sistema de diseño.
+Incluyen estructura, estilos base y estados interactivos.
+
+### Botón Primario "Terminal"
+
+Botón principal con estética de terminal. Fondo sólido con borde de alto contraste.
+
+```css
+.btn-terminal {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #000000;
+  background: #ffffff;
+  border: 2px solid #ffffff;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-white);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+/* Hover: desplazamiento con sombra */
+.btn-terminal:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px 0px #ffffff;
+}
+
+/* Active: efecto de pulsación mecánica */
+.btn-terminal:active {
+  transform: translate(0, 0);
+  box-shadow: none;
+}
+
+/* Focus visible: outline de accesibilidad */
+.btn-terminal:focus-visible {
+  outline: 2px solid var(--accent-yellow);
+  outline-offset: 2px;
+}
+```
+
+### Botón Secundario "Sketch"
+
+Botón transparente con borde estilo dibujado a mano. Menor prominencia visual.
+
+```css
+.btn-sketch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: transparent;
+  border: 2px solid var(--border-default);
+  border-radius: var(--radius-sketch);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+/* Hover: borde neón y leve rotación */
+.btn-sketch:hover {
+  border-color: var(--accent-yellow);
+  color: var(--accent-yellow);
+  transform: rotate(-0.5deg);
+}
+
+/* Active */
+.btn-sketch:active {
+  transform: rotate(0deg) scale(0.98);
+}
+
+/* Focus visible */
+.btn-sketch:focus-visible {
+  outline: 2px solid var(--accent-yellow);
+  outline-offset: 2px;
+}
+```
+
+### Input de búsqueda (Ctrl+K)
+
+Campo de búsqueda global con indicador de atajo de teclado.
+
+```html
+<div class="search-input">
+  <svg class="search-input__icon"><!-- lupa --></svg>
+  <input type="text" placeholder="Buscar documentación..." />
+  <kbd class="search-input__kbd">Ctrl+K</kbd>
+</div>
+```
+
+```css
+.search-input {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-code);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.2s ease;
+}
+
+.search-input:focus-within {
+  border-color: var(--accent-yellow);
+  outline: none;
+}
+
+.search-input input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  outline: none;
+}
+
+.search-input input::placeholder {
+  font-family: var(--font-hand);
+  color: var(--text-dim);
+}
+
+.search-input__kbd {
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+}
+```
+
+### Callout / Admonición (Efecto cinta adhesiva)
+
+No se usan los típicos cuadros de colores planos. Se aplica el concepto de
+"cinta adhesiva" (tape) para reforzar la estética de cuaderno.
+
+```html
+<div class="callout callout--warning">
+  <div class="callout__tape"></div>
+  <div class="callout__content">
+    <span class="callout__icon"><!-- icono --></span>
+    <div>
+      <strong class="callout__title">Advertencia</strong>
+      <p>Contenido del callout...</p>
+    </div>
+  </div>
+</div>
+```
+
+```css
+.callout {
+  position: relative;
+  background: #1f1f23;
+  border-left: 4px solid var(--accent-yellow);
+  padding: var(--space-md);
+  margin-top: var(--space-lg);
+}
+
+/* Efecto de cinta adhesiva */
+.callout__tape {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%) rotate(1deg) skewX(12deg);
+  width: 96px;
+  height: 24px;
+  background: rgba(253, 224, 71, 0.2);
+  pointer-events: none;
+}
+
+.callout__content {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+/* Variantes por tipo */
+.callout--warning { border-left-color: var(--accent-yellow); }
+.callout--info    { border-left-color: var(--accent-cyan); }
+.callout--tip     { border-left-color: var(--accent-green); }
+.callout--danger  { border-left-color: var(--accent-red); }
+```
+
+### Tablas (Data Grids)
+
+Estilo minimalista sin bordes verticales. Header con fuente monoespaciada.
+
+```css
+.doc-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.doc-table thead {
+  background: var(--bg-surface);
+}
+
+.doc-table th {
+  padding: var(--space-sm) var(--space-md);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  text-align: left;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.doc-table td {
+  padding: var(--space-sm) var(--space-md);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--text-primary);
+  border-bottom: 1px dashed var(--border-default);
+}
+
+.doc-table tbody tr:hover {
+  background: var(--bg-surface);
+}
+```
+
+### Bloques de código (con header y botón de copia)
+
+Cada bloque de código incluye un header con el nombre del lenguaje y un botón
+para copiar el contenido al portapapeles.
+
+```html
+<div class="code-block">
+  <div class="code-block__header">
+    <span class="code-block__lang">css</span>
+    <button class="code-block__copy" aria-label="Copiar código">
+      <!-- icono copiar -->
+    </button>
+  </div>
+  <pre class="code-block__pre"><code>...</code></pre>
+</div>
+```
+
+```css
+.code-block {
+  background: var(--bg-code);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.code-block__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-xs) var(--space-md);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.code-block__lang {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.code-block__copy {
+  padding: var(--space-xs);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.code-block__copy:hover {
+  color: var(--accent-green);
+}
+
+.code-block__pre {
+  padding: var(--space-md);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.5;
+}
+```
+
+### Tarjetas de librería (Library Cards)
+
+Tarjetas con rotación sutil que refuerzan la estética de notas pegadas
+en un cuaderno. Cada tarjeta tiene una rotación pseudo-aleatoria basada
+en su posición.
+
+```css
+.library-card {
+  position: relative;
+  background: var(--bg-surface);
+  border: 2px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+  box-shadow: var(--shadow-md);
+  transition: all 0.2s ease;
+  transform: rotate(-0.5deg);
+}
+
+.library-card:nth-child(even) {
+  transform: rotate(0.75deg);
+}
+
+.library-card:nth-child(3n) {
+  transform: rotate(-0.25deg);
+}
+
+/* Hover: se eleva y endereza */
+.library-card:hover {
+  transform: rotate(0deg) translate(-2px, -4px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--accent-cyan);
+}
+
+/* Label de categoría */
+.library-card__category {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+```
+
+<Callout type="tip" title="Rotación de tarjetas">
+  La rotación varía entre <code>-0.75deg</code> y <code>+0.75deg</code>. Para un
+  efecto más orgánico, asigna rotaciones con <code>:nth-child</code> o genera
+  valores aleatorios con JavaScript al montar el componente.
+</Callout>
+</section>
+
+{/* ===================== 6. ANIMATIONS & TRANSITIONS ===================== */}
+
+<section id="animations-transitions">
+<h2 class="doc-article__h2" id="animations-transitions">Animations & Transitions</h2>
+
+Las animaciones del sistema son sutiles y funcionales. Nunca decorativas sin propósito.
+La transición estándar es `0.2s ease` para todos los estados interactivos.
+
+### Transición estándar
+
+```css
+/* Valor base para todas las interacciones */
+.interactive {
+  transition: all 0.2s ease;
+}
+```
+
+### Hover de tarjetas
+
+Desplazamiento vertical con incremento de sombra. Simula que la tarjeta se
+"despega" del cuaderno.
+
+```css
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-hover:hover {
+  transform: translate(-2px, -4px);
+  box-shadow: var(--shadow-lg);
+}
+```
+
+### Efecto de pulsación de botón
+
+El botón se "hunde" al hacer clic, eliminando la sombra para simular
+una pulsación mecánica.
+
+```css
+.btn-press {
+  box-shadow: var(--shadow-md);
+  transition: all 0.2s ease;
+}
+
+.btn-press:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px 0px var(--border-default);
+}
+
+.btn-press:active {
+  transform: translate(0, 0);
+  box-shadow: none;
+  transition-duration: 0.05s;
+}
+```
+
+### Fade-in de secciones
+
+Animación de entrada para secciones de contenido al hacer scroll.
+Se activa mediante Intersection Observer.
+
+```css
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.section-animate {
+  opacity: 0;
+}
+
+.section-animate.is-visible {
+  animation: fadeInUp 0.4s ease forwards;
+}
+```
+
+```js
+// Intersection Observer para activar animaciones
+const observer = new IntersectionObserver(
+  (entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('is-visible');
+      }
+    });
+  },
+  { threshold: 0.1 }
+);
+
+document.querySelectorAll('.section-animate').forEach((el) => {
+  observer.observe(el);
+});
+```
+
+### Rotación estilo sticky-note
+
+Rotación sutil para elementos que simulan notas adhesivas o papeles pegados.
+El rango va de `-0.75deg` a `+0.75deg`.
+
+```css
+/* Rotación estática por posición */
+.sticky-rotate:nth-child(odd)  { transform: rotate(-0.75deg); }
+.sticky-rotate:nth-child(even) { transform: rotate(0.75deg); }
+.sticky-rotate:nth-child(3n)   { transform: rotate(-0.25deg); }
+.sticky-rotate:nth-child(4n)   { transform: rotate(0.5deg); }
+
+/* Al hacer hover, se endereza */
+.sticky-rotate:hover {
+  transform: rotate(0deg);
+  transition: transform 0.2s ease;
+}
+```
+
+### Movimiento reducido (Reduced Motion)
+
+Obligatorio respetar la preferencia del usuario para movimiento reducido.
+Todas las animaciones se desactivan o simplifican.
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .section-animate {
+    opacity: 1;
+  }
+
+  .sticky-rotate,
+  .library-card {
+    transform: none !important;
+  }
+}
+```
+
+<Callout type="warning" title="Rendimiento">
+  Limita las animaciones a propiedades que el navegador puede optimizar con
+  el compositor GPU: <code>transform</code> y <code>opacity</code>. Evita
+  animar <code>width</code>, <code>height</code>, <code>margin</code> o
+  <code>padding</code>.
+</Callout>
+</section>
+
+{/* ===================== 7. GRID BACKGROUND ===================== */}
+
+<section id="grid-background">
+<h2 class="doc-article__h2" id="grid-background">Grid Background</h2>
+
+El fondo de cuadrícula de ingeniería es un elemento esencial de la atmósfera
+visual del sistema. Simula el papel milimetrado de un cuaderno técnico.
+
+### Especificaciones
+
+- **Tamaño de celda:** 40px x 40px
+- **Grosor de línea:** 1px
+- **Color de línea:** `#27272a` (mismo que `--border-default`)
+- **Máscara:** Degradado radial que desvanece la cuadrícula en los bordes
+- **Opacidad:** 0.15 (muy sutil, apenas perceptible)
+
+### CSS listo para copiar
+
+```css
+.bg-grid-pattern {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-size: 40px 40px;
+  background-image:
+    linear-gradient(to right, #27272a 1px, transparent 1px),
+    linear-gradient(to bottom, #27272a 1px, transparent 1px);
+  mask-image: radial-gradient(circle at center, black 40%, transparent 100%);
+  -webkit-mask-image: radial-gradient(circle at center, black 40%, transparent 100%);
+  opacity: 0.15;
+}
+```
+
+### Uso en el HTML
+
+El patrón se coloca como primer hijo del `<body>` o del contenedor principal,
+con `position: fixed` para que cubra toda la ventana sin interferir con el scroll.
+
+```html
+<body>
+  <div class="bg-grid-pattern" aria-hidden="true"></div>
+  <div class="app-content">
+    <!-- Contenido de la aplicación -->
+  </div>
+</body>
+```
+
+### Variante con CSS custom properties
+
+Para mayor flexibilidad, se pueden parametrizar los valores con variables:
+
+```css
+.bg-grid-pattern {
+  --grid-size: 40px;
+  --grid-color: var(--border-default);
+  --grid-opacity: 0.15;
+
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-size: var(--grid-size) var(--grid-size);
+  background-image:
+    linear-gradient(to right, var(--grid-color) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-color) 1px, transparent 1px);
+  mask-image: radial-gradient(circle at center, black 40%, transparent 100%);
+  -webkit-mask-image: radial-gradient(circle at center, black 40%, transparent 100%);
+  opacity: var(--grid-opacity);
+}
+```
+
+<Callout type="tip" title="aria-hidden">
+  Siempre incluye <code>aria-hidden="true"</code> en el elemento del grid.
+  Es puramente decorativo y no debe ser anunciado por lectores de pantalla.
+  Además, <code>pointer-events: none</code> asegura que no interfiera con clics.
+</Callout>
+</section>
+
+{/* ===================== 8. ACCESSIBILITY ===================== */}
+
+<section id="accessibility">
+<h2 class="doc-article__h2" id="accessibility">Accessibility</h2>
+
+El sistema "Engineering Notebook" cumple con las pautas WCAG 2.1 nivel AA.
+A continuación se detallan los ratios de contraste, estrategias de foco y
+consideraciones para tecnologías asistivas.
+
+### Ratios de contraste WCAG AA
+
+Todos los colores de acento neón sobre los fondos oscuros del sistema superan
+el ratio mínimo de **4.5:1** para texto normal y **3:1** para texto grande.
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Color</th>
+        <th>Hex</th>
+        <th>Sobre --bg-void (#0f0f11)</th>
+        <th>Sobre --bg-surface (#18181b)</th>
+        <th>AA Normal</th>
+        <th>AA Grande</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>`--accent-yellow`</td>
+        <td>#fde047</td>
+        <td>13.2:1</td>
+        <td>12.1:1</td>
+        <td>Pasa</td>
+        <td>Pasa</td>
+      </tr>
+      <tr>
+        <td>`--accent-pink`</td>
+        <td>#f472b6</td>
+        <td>5.9:1</td>
+        <td>5.4:1</td>
+        <td>Pasa</td>
+        <td>Pasa</td>
+      </tr>
+      <tr>
+        <td>`--accent-cyan`</td>
+        <td>#22d3ee</td>
+        <td>9.6:1</td>
+        <td>8.8:1</td>
+        <td>Pasa</td>
+        <td>Pasa</td>
+      </tr>
+      <tr>
+        <td>`--accent-green`</td>
+        <td>#86efac</td>
+        <td>11.5:1</td>
+        <td>10.5:1</td>
+        <td>Pasa</td>
+        <td>Pasa</td>
+      </tr>
+      <tr>
+        <td>`--accent-red`</td>
+        <td>#fb7185</td>
+        <td>6.1:1</td>
+        <td>5.6:1</td>
+        <td>Pasa</td>
+        <td>Pasa</td>
+      </tr>
+      <tr>
+        <td>`--accent-orange`</td>
+        <td>#fb923c</td>
+        <td>7.4:1</td>
+        <td>6.8:1</td>
+        <td>Pasa</td>
+        <td>Pasa</td>
+      </tr>
+      <tr>
+        <td>`--accent-purple`</td>
+        <td>#a78bfa</td>
+        <td>5.5:1</td>
+        <td>5.0:1</td>
+        <td>Pasa</td>
+        <td>Pasa</td>
+      </tr>
+      <tr>
+        <td>`--text-primary`</td>
+        <td>#f4f4f5</td>
+        <td>16.1:1</td>
+        <td>14.7:1</td>
+        <td>Pasa</td>
+        <td>Pasa</td>
+      </tr>
+      <tr>
+        <td>`--text-secondary`</td>
+        <td>#a1a1aa</td>
+        <td>6.8:1</td>
+        <td>6.2:1</td>
+        <td>Pasa</td>
+        <td>Pasa</td>
+      </tr>
+      <tr>
+        <td>`--text-muted`</td>
+        <td>#71717a</td>
+        <td>4.0:1</td>
+        <td>3.6:1</td>
+        <td>Solo grande</td>
+        <td>Pasa</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<Callout type="warning" title="--text-muted">
+  El token <code>--text-muted</code> (#71717a) no alcanza el ratio 4.5:1 para texto
+  de tamaño normal. Úsalo solo para texto grande (18px+), elementos decorativos
+  o texto que no sea esencial para la comprensión del contenido.
+</Callout>
+
+### Estados :focus-visible
+
+Todos los elementos interactivos deben mostrar un indicador de foco visible
+cuando se navega con teclado. El estilo estándar del sistema es:
+
+```css
+/* Estilo de foco global */
+:focus-visible {
+  outline: 2px solid var(--accent-yellow);
+  outline-offset: 2px;
+}
+
+/* Eliminar outline nativo solo cuando focus-visible no aplica */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+```
+
+### Navegación por teclado
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Tecla</th>
+        <th>Acción</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>`Tab` / `Shift+Tab`</td>
+        <td>Navegar entre elementos interactivos en orden lógico del DOM.</td>
+      </tr>
+      <tr>
+        <td>`Enter` / `Space`</td>
+        <td>Activar botones, enlaces y controles.</td>
+      </tr>
+      <tr>
+        <td>`Escape`</td>
+        <td>Cerrar modales, menús desplegables y overlays.</td>
+      </tr>
+      <tr>
+        <td>`Ctrl+K`</td>
+        <td>Abrir el buscador global de documentación.</td>
+      </tr>
+      <tr>
+        <td>`Arrow Up/Down`</td>
+        <td>Navegar resultados de búsqueda y menús.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+### Consideraciones para lectores de pantalla
+
+- Todos los íconos decorativos llevan `aria-hidden="true"`.
+- Los íconos funcionales incluyen `aria-label` descriptivo.
+- El grid de fondo siempre lleva `aria-hidden="true"`.
+- Los bloques de código incluyen un `aria-label` con el lenguaje.
+- Las imágenes de documentación requieren `alt` descriptivo.
+- El botón de copiar código anuncia "Copiado" con `aria-live="polite"`.
+- Los callouts usan `role="note"` para ser identificados correctamente.
+
+```html
+<!-- Icono decorativo -->
+<svg aria-hidden="true">...</svg>
+
+<!-- Icono funcional -->
+<button aria-label="Copiar código al portapapeles">
+  <svg aria-hidden="true">...</svg>
+</button>
+
+<!-- Anuncio de estado -->
+<span class="sr-only" aria-live="polite" id="copy-status"></span>
+```
+
+### Movimiento reducido
+
+El sistema respeta la preferencia `prefers-reduced-motion` del usuario.
+Cuando está activa, todas las animaciones se reducen a transiciones
+instantáneas y las rotaciones decorativas se eliminan.
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+```
+
+### Clase auxiliar screen-reader-only
+
+Clase utilitaria para contenido visible solo por lectores de pantalla.
+
+```css
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+```
+
+<Callout type="info" title="Testing de accesibilidad">
+  Verifica los ratios de contraste con herramientas como
+  <strong>WebAIM Contrast Checker</strong> o la pestaña de Accesibilidad de
+  Chrome DevTools. Prueba la navegación completa con teclado antes de cada release.
+</Callout>
+</section>
