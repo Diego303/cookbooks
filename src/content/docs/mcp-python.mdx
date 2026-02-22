@@ -667,7 +667,7 @@ async def main_with_monitoring():
       <tr><td>**Namespacing**</td><td>Colisión de nombres de tools entre servidores</td><td>Prefijar con `servidor.tool_name`</td></tr>
       <tr><td>**Health monitoring**</td><td>Servidores que caen sin aviso</td><td>Ping periódico + reconexión automática</td></tr>
       <tr><td>**Config file**</td><td>Hardcodear servidores en el código</td><td>JSON compatible con Claude Desktop</td></tr>
-      <tr><td>**Env resolution**</td><td>Secrets en archivos de configuración</td><td>Variables `${VAR}` resueltas desde entorno</td></tr>
+      <tr><td>**Env resolution**</td><td>Secrets en archivos de configuración</td><td>Variables <code>{'${VAR}'}</code> resueltas desde entorno</td></tr>
       <tr><td>**Parallel connect**</td><td>Lentitud al conectar muchos servidores</td><td>`asyncio.gather` para conexiones concurrentes</td></tr>
     </tbody>
   </table>
