@@ -655,11 +655,11 @@ if gpus:
       <tr><th>Optimización</th><th>Speedup típico</th><th>Reducción de memoria</th><th>Requisitos</th><th>Complejidad</th></tr>
     </thead>
     <tbody>
-      <tr><td>**Mixed Precision (float16)**</td><td>1.5-2x</td><td>~40%</td><td>GPU con Tensor Cores</td><td>Baja (1 línea de config)</td></tr>
+      <tr><td>**Mixed Precision (float16)**</td><td>1.5-2x</td><td>{'~'}40%</td><td>GPU con Tensor Cores</td><td>Baja (1 línea de config)</td></tr>
       <tr><td>**XLA jit_compile**</td><td>1.2-1.5x</td><td>Variable</td><td>TensorFlow backend</td><td>Baja (1 flag)</td></tr>
       <tr><td>**tf.data pipeline**</td><td>2-5x en carga</td><td>Configurable (cache)</td><td>Ninguno</td><td>Media</td></tr>
       <tr><td>**Gradient accumulation**</td><td>N/A (misma velocidad)</td><td>Proporcional a steps</td><td>Ninguno</td><td>Media</td></tr>
-      <tr><td>**Mixed + XLA + tf.data**</td><td>3-5x combinado</td><td>~50%</td><td>GPU moderna + TF</td><td>Media</td></tr>
+      <tr><td>**Mixed + XLA + tf.data**</td><td>3-5x combinado</td><td>{'~'}50%</td><td>GPU moderna + TF</td><td>Media</td></tr>
     </tbody>
   </table>
 </div>
