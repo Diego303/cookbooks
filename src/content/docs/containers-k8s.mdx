@@ -547,7 +547,7 @@ docker compose exec postgres psql -U appuser -d appdb
 
 <Callout type="tip" title="Archivos .env con Compose">
   Docker Compose lee automaticamente un archivo <code>.env</code> en el directorio del proyecto.
-  Usa <code>${VARIABLE:-default}</code> en el YAML para valores configurables.
+  Usa <code>{'${VARIABLE:-default}'}</code> en el YAML para valores configurables.
   Nunca commitees el <code>.env</code> real — incluye un <code>.env.example</code> con valores de referencia.
 </Callout>
 
