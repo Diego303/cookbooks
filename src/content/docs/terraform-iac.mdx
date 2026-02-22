@@ -1,0 +1,598 @@
+---
+title: "Terraform IaC"
+description: "Infrastructure as Code con Terraform: providers, módulos, workspaces, estado remoto y CI/CD para infraestructura."
+intro: "Guía de Infrastructure as Code con Terraform. Cubre desde los conceptos fundamentales hasta patrones avanzados de módulos, workspaces, estado remoto y pipelines de CI/CD para infraestructura."
+category: "DEVOPS"
+categoryColor: "yellow"
+icon: "blocks"
+tags: ["Terraform", "IaC", "HCL"]
+breadcrumb: ["Docs", "DevOps", "Terraform IaC"]
+order: 6
+toc:
+  - { id: "terraform-fundamentals", label: "Fundamentos" }
+  - { id: "resources-data", label: "Resources & Data Sources" }
+  - { id: "modules", label: "Módulos" }
+  - { id: "workspaces-envs", label: "Workspaces & Environments" }
+  - { id: "cicd-iac", label: "CI/CD para IaC" }
+  - { id: "state-management", label: "State Management" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="terraform-fundamentals">
+<h2 class="doc-article__h2" id="terraform-fundamentals">Fundamentos</h2>
+
+Terraform es una herramienta de **Infrastructure as Code declarativa**
+que permite definir, planificar y aplicar cambios de infraestructura
+de forma reproducible y versionable.
+
+```text
+Flujo de trabajo Terraform
+
+  Developer                   Terraform                    Cloud Provider
+      │                           │                              │
+      │  terraform init           │                              │
+      ├──────────────────────────▶│  Descarga providers          │
+      │                           │  Inicializa backend          │
+      │                           │                              │
+      │  terraform plan            │                              │
+      ├──────────────────────────▶│  Compara estado vs config    │
+      │◀──────────────────────────┤  Muestra cambios             │
+      │  "Plan: 3 to add,         │                              │
+      │   1 to change, 0 destroy" │                              │
+      │                           │                              │
+      │  terraform apply           │                              │
+      ├──────────────────────────▶│  Ejecuta cambios             │
+      │                           ├─────────────────────────────▶│
+      │                           │          API calls           │
+      │                           │◀─────────────────────────────┤
+      │◀──────────────────────────┤  Actualiza state             │
+      │  "Apply complete!          │                              │
+      │   3 added, 1 changed"     │                              │
+
+Archivos clave:
+  main.tf        -> Recursos principales
+  variables.tf   -> Variables de input
+  outputs.tf     -> Valores de salida
+  providers.tf   -> Configuracion de providers
+  terraform.tfvars -> Valores de variables (no commitear secrets)
+```
+
+```hcl
+# providers.tf — Configuracion del provider
+terraform {
+  required_version = ">= 1.7"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+
+  # Estado remoto en S3
+  backend "s3" {
+    bucket         = "my-terraform-state"
+    key            = "production/terraform.tfstate"
+    region         = "eu-west-1"
+    encrypt        = true
+    dynamodb_table = "terraform-locks"
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+
+  default_tags {
+    tags = {
+      Environment = var.environment
+      ManagedBy   = "terraform"
+      Project     = var.project_name
+    }
+  }
+}
+```
+
+<Callout type="info" title="State remoto obligatorio">
+  <strong>Nunca</strong> uses state local en equipos. El state contiene
+  informacion sensible y debe estar en un backend compartido (S3, GCS,
+  Terraform Cloud) con locking para evitar race conditions.
+</Callout>
+</section>
+
+<section id="resources-data">
+<h2 class="doc-article__h2" id="resources-data">Resources & Data Sources</h2>
+
+Los **resources** crean infraestructura real. Los
+**data sources** leen infraestructura existente sin modificarla.
+
+```hcl
+# main.tf — Infraestructura de una aplicacion web
+
+# -- VPC --
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+
+  tags = { Name = "${var.project_name}-vpc" }
+}
+
+# -- Subnets (publico + privado) --
+resource "aws_subnet" "public" {
+  count             = 2
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.${count.index}.0/24"
+  availability_zone = data.aws_availability_zones.available.names[count.index]
+
+  map_public_ip_on_launch = true
+  tags = { Name = "public-${count.index}" }
+}
+
+# -- Security Group --
+resource "aws_security_group" "web" {
+  name   = "web-sg"
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# -- Data source: leer zonas disponibles --
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+# -- Data source: AMI mas reciente --
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"]  # Canonical
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-24.04-amd64-*"]
+  }
+}
+```
+</section>
+
+<section id="modules">
+<h2 class="doc-article__h2" id="modules">Modulos</h2>
+
+Los modulos son **paquetes reutilizables** de configuracion Terraform.
+Encapsulan recursos relacionados con una interfaz de variables/outputs limpia.
+
+```hcl
+# modules/ecs-service/main.tf — Modulo reutilizable
+variable "service_name"  { type = string }
+variable "image"         { type = string }
+variable "cpu"           { type = number; default = 256 }
+variable "memory"        { type = number; default = 512 }
+variable "desired_count" { type = number; default = 2 }
+variable "port"          { type = number; default = 8080 }
+
+resource "aws_ecs_task_definition" "this" {
+  family                   = var.service_name
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = var.cpu
+  memory                   = var.memory
+
+  container_definitions = jsonencode([{
+    name      = var.service_name
+    image     = var.image
+    essential = true
+    portMappings = [{ containerPort = var.port }]
+  }])
+}
+
+output "task_definition_arn" {
+  value = aws_ecs_task_definition.this.arn
+}
+
+# -- Uso del modulo --
+# root/main.tf
+module "backend" {
+  source        = "./modules/ecs-service"
+  service_name  = "backend-api"
+  image         = "ghcr.io/org/backend:latest"
+  cpu           = 512
+  memory        = 1024
+  desired_count = 3
+}
+
+module "worker" {
+  source       = "./modules/ecs-service"
+  service_name = "worker"
+  image        = "ghcr.io/org/worker:latest"
+  cpu          = 1024
+  memory       = 2048
+}
+```
+
+<Callout type="tip" title="Terraform Registry">
+  Antes de crear un modulo propio, busca en el
+  <strong>Terraform Registry</strong> (registry.terraform.io). Hay modulos
+  verificados para VPC, EKS, RDS, y casi cualquier servicio de AWS/GCP/Azure.
+</Callout>
+</section>
+
+<section id="workspaces-envs">
+<h2 class="doc-article__h2" id="workspaces-envs">Workspaces & Environments</h2>
+
+Los **workspaces** permiten gestionar multiples entornos
+(dev, staging, prod) con el mismo codigo Terraform usando variables
+diferentes por entorno.
+
+```hcl
+# variables.tf
+variable "environment" {
+  type = string
+  validation {
+    condition     = contains(["dev", "staging", "production"], var.environment)
+    error_message = "Environment must be dev, staging, or production."
+  }
+}
+
+# Configuracion por entorno
+locals {
+  env_config = {
+    dev = {
+      instance_type = "t3.small"
+      min_size      = 1
+      max_size      = 2
+      multi_az      = false
+    }
+    staging = {
+      instance_type = "t3.medium"
+      min_size      = 2
+      max_size      = 4
+      multi_az      = true
+    }
+    production = {
+      instance_type = "m5.large"
+      min_size      = 3
+      max_size      = 10
+      multi_az      = true
+    }
+  }
+
+  config = local.env_config[var.environment]
+}
+```
+
+```bash
+# Gestion de workspaces
+terraform workspace new dev
+terraform workspace new staging
+terraform workspace new production
+
+# Seleccionar workspace
+terraform workspace select staging
+
+# Aplicar con variables de entorno
+terraform apply -var-file="envs/staging.tfvars"
+```
+</section>
+
+<section id="cicd-iac">
+<h2 class="doc-article__h2" id="cicd-iac">CI/CD para IaC</h2>
+
+La infraestructura debe pasar por el mismo rigor de CI/CD que el codigo:
+**linting, plan en PR, apply automatico en merge**.
+
+```yaml
+# .github/workflows/terraform.yml
+name: Terraform CI/CD
+
+on:
+  pull_request:
+    paths: ['infra/**']
+  push:
+    branches: [main]
+    paths: ['infra/**']
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+
+      - name: Terraform Init
+        run: terraform init -backend=false
+        working-directory: infra/
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -var-file=envs/staging.tfvars -no-color
+        working-directory: infra/
+
+  apply:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production   # Requiere aprobacion manual
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform init
+      - run: terraform apply -auto-approve -var-file=envs/production.tfvars
+```
+
+<Callout type="warning" title="Nunca auto-approve en produccion sin proteccion">
+  Configura <strong>GitHub Environment protection rules</strong> para
+  que el apply en produccion requiera aprobacion manual de al menos
+  un reviewer antes de ejecutarse.
+</Callout>
+</section>
+
+<section id="state-management">
+<h2 class="doc-article__h2" id="state-management">State Management</h2>
+
+El **state** de Terraform es el archivo que mapea la configuracion HCL a los
+recursos reales en el proveedor cloud. Gestionarlo correctamente es critico:
+un state corrupto o desincronizado puede causar la destruccion accidental
+de infraestructura.
+
+### Backends remotos
+
+```text
+Comparacion de backends para state remoto
+
+┌───────────────────────────────────────────────────────────────┐
+│                    Remote State Backends                       │
+│                                                               │
+│  ┌─────────────┐  ┌─────────────┐  ┌──────────────────────┐  │
+│  │   AWS S3    │  │  GCP GCS   │  │  Terraform Cloud     │  │
+│  │  + DynamoDB │  │  + GCS Lock│  │  (HCP)               │  │
+│  │             │  │             │  │                      │  │
+│  │  Locking: ✓ │  │  Locking: ✓ │  │  Locking: ✓          │  │
+│  │  Encrypt: ✓ │  │  Encrypt: ✓ │  │  Encrypt: ✓          │  │
+│  │  Cost: bajo │  │  Cost: bajo │  │  Cost: free/paid     │  │
+│  │  Setup: DIY │  │  Setup: DIY │  │  Setup: managed      │  │
+│  └─────────────┘  └─────────────┘  └──────────────────────┘  │
+└───────────────────────────────────────────────────────────────┘
+```
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Backend</th><th>Locking</th><th>Cifrado</th><th>Costo</th><th>Mejor para</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>S3 + DynamoDB</td><td>DynamoDB table</td><td>SSE-S3 / SSE-KMS</td><td>~$1/mes</td><td>Equipos en AWS</td></tr>
+      <tr><td>GCS</td><td>Nativo en GCS</td><td>Google-managed / CMEK</td><td>~$1/mes</td><td>Equipos en GCP</td></tr>
+      <tr><td>Azure Blob</td><td>Blob lease</td><td>SSE con Azure Key Vault</td><td>~$1/mes</td><td>Equipos en Azure</td></tr>
+      <tr><td>Terraform Cloud</td><td>Nativo</td><td>Gestionado por HashiCorp</td><td>Gratis hasta 500 resources</td><td>Equipos pequenos, gestion simplificada</td></tr>
+      <tr><td>Consul</td><td>Nativo</td><td>Configurable</td><td>Self-hosted</td><td>On-premise con HashiCorp stack</td></tr>
+    </tbody>
+  </table>
+</div>
+
+### Configuracion de S3 backend con locking
+
+```hcl
+# backend.tf — Estado remoto en S3 con DynamoDB locking
+terraform {
+  backend "s3" {
+    bucket         = "mycompany-terraform-state"
+    key            = "services/backend/terraform.tfstate"
+    region         = "eu-west-1"
+    encrypt        = true
+    dynamodb_table = "terraform-locks"
+
+    # Opcional: cifrado con KMS
+    kms_key_id     = "arn:aws:kms:eu-west-1:123456789:key/abcd-1234"
+  }
+}
+
+# -- Crear el bucket y tabla con un proyecto bootstrap --
+# bootstrap/main.tf (se aplica una sola vez con state local)
+resource "aws_s3_bucket" "terraform_state" {
+  bucket = "mycompany-terraform-state"
+
+  lifecycle {
+    prevent_destroy = true    # Evitar borrado accidental
+  }
+}
+
+resource "aws_s3_bucket_versioning" "state_versioning" {
+  bucket = aws_s3_bucket.terraform_state.id
+  versioning_configuration {
+    status = "Enabled"       # Poder recuperar states anteriores
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "state_encryption" {
+  bucket = aws_s3_bucket.terraform_state.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "state_public_access" {
+  bucket = aws_s3_bucket.terraform_state.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_dynamodb_table" "terraform_locks" {
+  name         = "terraform-locks"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+}
+```
+
+<Callout type="warning" title="Siempre habilitar versionado en el bucket">
+  El versionado del bucket S3 permite recuperar un state anterior si se corrompe
+  o si un <code>terraform apply</code> destructivo actualiza el state incorrectamente.
+  Sin versionado, un state perdido significa tener que reimportar toda la infraestructura.
+</Callout>
+
+### Comandos de terraform state
+
+```bash
+# ── Listar todos los recursos en el state ──
+terraform state list
+# aws_vpc.main
+# aws_subnet.public[0]
+# aws_subnet.public[1]
+# module.backend.aws_ecs_task_definition.this
+
+# ── Ver detalles de un recurso especifico ──
+terraform state show aws_vpc.main
+# resource "aws_vpc" "main" {
+#     arn                  = "arn:aws:ec2:eu-west-1:123456:vpc/vpc-abc123"
+#     cidr_block           = "10.0.0.0/16"
+#     enable_dns_hostnames = true
+#     ...
+# }
+
+# ── Mover recurso (renombrar en el state sin recrear) ──
+terraform state mv aws_vpc.main aws_vpc.primary
+# Util al refactorizar: renombrar recursos sin destruirlos
+
+# ── Mover recurso a otro modulo ──
+terraform state mv aws_subnet.public module.networking.aws_subnet.public
+
+# ── Eliminar recurso del state (sin destruir en cloud) ──
+terraform state rm aws_security_group.legacy
+# El recurso sigue existiendo en AWS, pero Terraform deja de gestionarlo
+
+# ── Descargar state remoto a archivo local ──
+terraform state pull > terraform.tfstate.backup
+
+# ── Subir state local al backend remoto (PELIGROSO) ──
+terraform state push terraform.tfstate.backup
+
+# ── Forzar desbloqueo del state (si un apply quedo colgado) ──
+terraform force-unlock LOCK_ID
+```
+
+<Callout type="tip" title="Cheatsheet de state">
+  <code>state list</code> — listar recursos<br/>
+  <code>state show ADDR</code> — detalles de un recurso<br/>
+  <code>state mv SRC DST</code> — renombrar/mover sin recrear<br/>
+  <code>state rm ADDR</code> — dejar de gestionar un recurso<br/>
+  <code>state pull</code> — descargar state<br/>
+  <code>state push</code> — subir state (usar con precaucion)
+</Callout>
+
+### Importar recursos existentes
+
+Cuando tienes infraestructura creada manualmente (ClickOps) o por otra
+herramienta, puedes incorporarla al state de Terraform con el bloque `import`.
+
+```hcl
+# imports.tf — Importar recursos existentes (Terraform >= 1.5)
+
+# Importar una VPC existente
+import {
+  to = aws_vpc.main
+  id = "vpc-0abc123def456789"
+}
+
+# Importar un Security Group
+import {
+  to = aws_security_group.web
+  id = "sg-0abc123def456789"
+}
+
+# Importar un RDS instance
+import {
+  to = aws_db_instance.primary
+  id = "my-production-database"
+}
+
+# Importar un bucket S3
+import {
+  to = aws_s3_bucket.uploads
+  id = "my-company-uploads-bucket"
+}
+```
+
+```bash
+# Flujo de importacion
+# 1. Escribir el bloque import + el recurso HCL
+# 2. Ejecutar plan para ver que Terraform detecta el recurso
+terraform plan -generate-config-out=generated.tf   # Genera HCL automatico (experimental)
+
+# 3. Revisar y ajustar el HCL generado
+# 4. Aplicar para sincronizar el state
+terraform apply
+
+# Metodo clasico (CLI, sin bloque import)
+terraform import aws_vpc.main vpc-0abc123def456789
+```
+
+### Moved blocks para refactoring
+
+Al reorganizar modulos o renombrar recursos, usa el bloque `moved`
+para que Terraform entienda que el recurso cambio de nombre pero
+**no debe destruirse y recrearse**.
+
+```hcl
+# moved.tf — Refactoring sin destruir recursos
+
+# Renombrar un recurso
+moved {
+  from = aws_vpc.main
+  to   = aws_vpc.primary
+}
+
+# Mover recurso a un modulo
+moved {
+  from = aws_subnet.public
+  to   = module.networking.aws_subnet.public
+}
+
+# Mover entre modulos
+moved {
+  from = module.old_network.aws_vpc.this
+  to   = module.networking.aws_vpc.this
+}
+
+# Renombrar un modulo completo
+moved {
+  from = module.backend_service
+  to   = module.api_service
+}
+```
+
+<Callout type="info" title="moved vs state mv">
+  <strong>moved blocks</strong> son declarativos y se commitean en Git: todo el equipo
+  recibe la refactorizacion al hacer <code>terraform plan</code>. <strong>state mv</strong>
+  es imperativo y modifica el state directamente — solo lo ve quien lo ejecuta.
+  Siempre prefiere <code>moved</code> en equipos colaborativos.
+</Callout>
+</section>

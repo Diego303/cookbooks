@@ -1,0 +1,544 @@
+---
+title: "CI/CD Pipeline"
+description: "Pipeline completo de CI/CD con GitHub Actions, ArgoCD y Kubernetes para despliegues automáticos."
+intro: "Diseño e implementación de un pipeline CI/CD completo con GitHub Actions, Container Registry, ArgoCD y Kubernetes. Cubre desde el commit hasta el despliegue automático en producción con estrategias GitOps."
+category: "DEVOPS"
+categoryColor: "yellow"
+icon: "git-branch"
+tags: ["CI/CD", "ArgoCD", "GitOps"]
+breadcrumb: ["Docs", "DevOps", "CI/CD Pipeline"]
+order: 5
+toc:
+  - { id: "pipeline-architecture", label: "Pipeline Architecture" }
+  - { id: "github-actions", label: "GitHub Actions" }
+  - { id: "container-registry", label: "Container Registry" }
+  - { id: "argocd-gitops", label: "ArgoCD & GitOps" }
+  - { id: "environments", label: "Environments" }
+  - { id: "rollback-strategies", label: "Rollback Strategies" }
+  - { id: "branch-protection", label: "Branch Protection & Releases" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="pipeline-architecture">
+<h2 class="doc-article__h2" id="pipeline-architecture">Pipeline Architecture</h2>
+
+El pipeline sigue el modelo **GitOps**: el estado deseado de la
+infraestructura se define en Git, y ArgoCD se encarga de sincronizar el cluster
+con el repositorio automaticamente.
+
+```text
+Flujo completo CI/CD
+
+Developer                    CI (GitHub Actions)              CD (ArgoCD)
+    │                              │                                │
+    │  git push                    │                                │
+    ├─────────────────────────────▶│                                │
+    │                              │  1. Lint + Test                │
+    │                              │  2. Build Docker image         │
+    │                              │  3. Push to Registry           │
+    │                              │  4. Update K8s manifests       │
+    │                              │     (image tag)                │
+    │                              ├───────────────────────────────▶│
+    │                              │                                │  5. Detect change
+    │                              │                                │  6. Sync to cluster
+    │                              │                                │  7. Health check
+    │                              │                                │
+    │◀─────────────────────────────┼────────────────────────────────┤
+    │  Deploy notification         │                                │
+
+Repositorios:
+  app-repo/      -> codigo de la aplicacion + Dockerfile + CI workflows
+  infra-repo/    -> Helm charts / K8s manifests (fuente de verdad para ArgoCD)
+```
+
+<Callout type="info" title="Por que GitOps?">
+  Con GitOps, <strong>Git es la fuente de verdad</strong>. Toda la configuracion del cluster
+  esta versionada. Los rollbacks son un simple <code>git revert</code>. Auditabilidad total
+  de quien cambio que y cuando.
+</Callout>
+</section>
+
+<section id="github-actions">
+<h2 class="doc-article__h2" id="github-actions">GitHub Actions</h2>
+
+El workflow de CI se ejecuta en cada push a `main`
+y en cada Pull Request. Incluye testing, build de imagen Docker y push al registry.
+
+```yaml
+# .github/workflows/ci.yml
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Lint (Ruff)
+        run: ruff check . --output-format=github
+
+      - name: Type check (mypy)
+        run: mypy app/ --ignore-missing-imports
+
+      - name: Unit tests
+        run: pytest tests/ -v --cov=app --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: coverage.xml
+
+  build-and-push:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+```
+</section>
+
+<section id="container-registry">
+<h2 class="doc-article__h2" id="container-registry">Container Registry</h2>
+
+El registry almacena las imagenes Docker construidas por CI. GitHub Container Registry
+(ghcr.io) se integra nativamente con GitHub Actions.
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Registry</th><th>URL</th><th>Ventaja</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>GitHub (GHCR)</td><td>`ghcr.io`</td><td>Integracion nativa con Actions + permisos GITHUB_TOKEN</td></tr>
+      <tr><td>Docker Hub</td><td>`docker.io`</td><td>Registry publico mas grande, rate limits en gratuito</td></tr>
+      <tr><td>AWS ECR</td><td>`*.ecr.*.amazonaws.com`</td><td>Integracion IAM, scanning de vulnerabilidades</td></tr>
+      <tr><td>Google AR</td><td>`*-docker.pkg.dev`</td><td>Integracion GKE, vulnerability scanning</td></tr>
+    </tbody>
+  </table>
+</div>
+
+### Estrategia de tagging
+
+```bash
+# Tags recomendados por imagen:
+ghcr.io/org/backend:abc123f   # SHA del commit (inmutable)
+ghcr.io/org/backend:1.4.2     # Semver (releases)
+ghcr.io/org/backend:latest    # Ultimo build de main
+
+# NUNCA usar :latest en produccion -> siempre SHA o semver
+```
+</section>
+
+<section id="argocd-gitops">
+<h2 class="doc-article__h2" id="argocd-gitops">ArgoCD & GitOps</h2>
+
+ArgoCD monitorea el repositorio de infraestructura y sincroniza automaticamente
+los manifiestos con el cluster de Kubernetes. Si detecta *drift* entre
+el estado del cluster y Git, puede corregirlo automaticamente.
+
+```yaml
+# argocd-application.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: backend-production
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/org/infra-repo.git
+    targetRevision: main
+    path: charts/backend
+    helm:
+      valueFiles:
+        - values-production.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: production
+  syncPolicy:
+    automated:
+      prune: true          # Eliminar recursos huerfanos
+      selfHeal: true       # Corregir drift automaticamente
+    syncOptions:
+      - CreateNamespace=true
+```
+
+<Callout type="tip" title="Auto-update de image tag">
+  Usa <strong>GitHub Actions</strong> para hacer un commit automatico al infra-repo
+  actualizando el image tag despues de cada build exitoso. ArgoCD detecta el
+  cambio y despliega automaticamente.
+</Callout>
+
+### Step de CI que actualiza infra-repo
+
+```yaml
+# Paso adicional en CI despues del build
+  update-manifest:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout infra repo
+        uses: actions/checkout@v4
+        with:
+          repository: org/infra-repo
+          token: ${{ secrets.INFRA_REPO_TOKEN }}
+
+      - name: Update image tag
+        run: |
+          cd charts/backend
+          sed -i "s|tag:.*|tag: ${{ github.sha }}|" values-production.yaml
+          git config user.name "CI Bot"
+          git config user.email "ci@org.com"
+          git add .
+          git commit -m "chore: update backend to ${{ github.sha }}"
+          git push
+```
+</section>
+
+<section id="environments">
+<h2 class="doc-article__h2" id="environments">Environments</h2>
+
+La separacion de entornos asegura que los cambios se validen progresivamente
+antes de llegar a produccion. Cada entorno tiene su propio namespace y
+configuracion en K8s.
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Entorno</th><th>Trigger</th><th>Namespace</th><th>Replicas</th><th>Proposito</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>**Dev**</td><td>Push a branch</td><td>`dev`</td><td>1</td><td>Testing rapido de features</td></tr>
+      <tr><td>**Staging**</td><td>PR -> main</td><td>`staging`</td><td>2</td><td>Validacion pre-produccion</td></tr>
+      <tr><td>**Production**</td><td>Merge a main</td><td>`production`</td><td>3-10</td><td>Trafico real</td></tr>
+    </tbody>
+  </table>
+</div>
+
+```text
+Flujo de promocion entre environments
+
+  feature-branch          main
+       │                     │
+       │  PR created         │
+       ├────────────────────▶│
+       │                     │
+   [ Dev ]              [ Staging ]         [ Production ]
+   Auto-deploy          Auto-deploy          Auto-deploy
+   on push              on PR merge          on manifest update
+       │                     │                     │
+       ▼                     ▼                     ▼
+   1 replica             2 replicas           3-10 replicas
+   No monitoring         Alertas test         Full observability
+```
+</section>
+
+<section id="rollback-strategies">
+<h2 class="doc-article__h2" id="rollback-strategies">Rollback Strategies</h2>
+
+Cuando un deploy falla, necesitas volver al estado anterior de forma rapida y confiable.
+
+### GitOps rollback (recomendado)
+
+```bash
+# En el infra-repo: revertir el commit que actualizo el tag
+git revert HEAD
+git push
+# ArgoCD detecta el cambio y sincroniza al tag anterior
+```
+
+### K8s rollback directo
+
+```bash
+# Ver historial de rollouts
+kubectl rollout history deployment/backend -n production
+
+# Rollback a la revision anterior
+kubectl rollout undo deployment/backend -n production
+
+# Rollback a una revision especifica
+kubectl rollout undo deployment/backend --to-revision=3 -n production
+
+# Verificar estado
+kubectl rollout status deployment/backend -n production
+```
+
+<Callout type="warning" title="Rollback K8s vs GitOps">
+  <code>kubectl rollout undo</code> causa <strong>drift</strong> entre el cluster y Git.
+  ArgoCD intentara re-sincronizar al estado de Git. Siempre prefiere el rollback
+  via Git para mantener la consistencia.
+</Callout>
+</section>
+
+<section id="branch-protection">
+<h2 class="doc-article__h2" id="branch-protection">Branch Protection & Releases</h2>
+
+Una estrategia solida de proteccion de ramas y releases automatizados garantiza
+que el codigo que llega a produccion sea estable, revisado y versionado
+correctamente. Combinar **branch protection rules** con **semantic versioning**
+y **releases automatizados** reduce errores humanos y acelera el ciclo de entrega.
+
+### Branch protection rules en GitHub
+
+```text
+Configuracion recomendada para la rama main
+
+┌─────────────────────────────────────────────────────────────┐
+│                 Branch Protection: main                      │
+│                                                             │
+│  ✓  Require pull request before merging                     │
+│     ├── Required approvals: 1 (minimo)                      │
+│     ├── Dismiss stale reviews on new commits                │
+│     └── Require review from code owners                     │
+│                                                             │
+│  ✓  Require status checks to pass                           │
+│     ├── CI Pipeline / test                                  │
+│     ├── CI Pipeline / lint                                  │
+│     └── Require branches to be up to date                   │
+│                                                             │
+│  ✓  Require signed commits                                  │
+│  ✓  Require linear history (squash or rebase)               │
+│  ✗  Allow force pushes: NEVER                               │
+│  ✗  Allow deletions: NEVER                                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+```bash
+# Configurar branch protection via GitHub CLI
+gh api repos/{owner}/{repo}/branches/main/protection \
+  --method PUT \
+  --field required_status_checks='{"strict":true,"contexts":["test","lint"]}' \
+  --field enforce_admins=true \
+  --field required_pull_request_reviews='{"required_approving_review_count":1,"dismiss_stale_reviews":true}' \
+  --field restrictions=null
+```
+
+### Conventional Commits y Semantic Versioning
+
+El **versionado semantico** (SemVer) sigue el formato `MAJOR.MINOR.PATCH`.
+Combinado con **Conventional Commits**, las herramientas pueden determinar
+automaticamente el tipo de release.
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Prefijo del commit</th><th>Tipo de cambio</th><th>Version bump</th><th>Ejemplo</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>fix:</code></td><td>Correccion de bug</td><td>PATCH (1.0.0 -> 1.0.1)</td><td><code>fix: resolver timeout en conexion DB</code></td></tr>
+      <tr><td><code>feat:</code></td><td>Nueva funcionalidad</td><td>MINOR (1.0.0 -> 1.1.0)</td><td><code>feat: agregar endpoint de exportacion CSV</code></td></tr>
+      <tr><td><code>feat!:</code> o <code>BREAKING CHANGE:</code></td><td>Cambio incompatible</td><td>MAJOR (1.0.0 -> 2.0.0)</td><td><code>feat!: migrar auth a OAuth2</code></td></tr>
+      <tr><td><code>chore:</code></td><td>Mantenimiento</td><td>Sin release</td><td><code>chore: actualizar dependencias</code></td></tr>
+      <tr><td><code>docs:</code></td><td>Documentacion</td><td>Sin release</td><td><code>docs: actualizar README de la API</code></td></tr>
+      <tr><td><code>ci:</code></td><td>Pipeline CI/CD</td><td>Sin release</td><td><code>ci: agregar job de security scanning</code></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<Callout type="tip" title="Validar commits automaticamente">
+  Usa <strong>commitlint</strong> con un hook de <code>commit-msg</code> (via Husky o
+  pre-commit) para rechazar commits que no sigan la convencion. En CI, usa la
+  action <code>wagoid/commitlint-github-action</code> para validar los commits del PR.
+</Callout>
+
+### Release automatizado con release-please
+
+**release-please** de Google analiza los commits desde la ultima release,
+genera un PR con el changelog y bump de version, y al mergearlo
+crea automaticamente el GitHub Release con tag.
+
+```yaml
+# .github/workflows/release.yml
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          release-type: python       # o node, go, etc.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Build y deploy solo cuando se crea un release ──
+  deploy:
+    needs: release
+    if: needs.release.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push release image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ needs.release.outputs.version }}
+            ghcr.io/${{ github.repository }}:latest
+
+      - name: Update infra-repo with release version
+        run: |
+          git clone https://x-access-token:${{ secrets.INFRA_REPO_TOKEN }}@github.com/org/infra-repo.git
+          cd infra-repo/charts/backend
+          sed -i "s|tag:.*|tag: ${{ needs.release.outputs.version }}|" values-production.yaml
+          git config user.name "Release Bot"
+          git config user.email "release@org.com"
+          git add .
+          git commit -m "release: deploy backend ${{ needs.release.outputs.version }}"
+          git push
+```
+
+### Generacion de changelog
+
+release-please genera automaticamente un `CHANGELOG.md` con el siguiente formato
+basandose en los conventional commits:
+
+```text
+## [1.5.0](https://github.com/org/backend/compare/v1.4.2...v1.5.0) (2026-02-20)
+
+### Features
+
+* agregar endpoint de exportacion CSV ([#142](https://github.com/org/backend/pull/142))
+* soporte para filtros avanzados en busqueda ([#138](https://github.com/org/backend/pull/138))
+
+### Bug Fixes
+
+* resolver timeout en conexion DB bajo carga ([#140](https://github.com/org/backend/pull/140))
+* corregir paginacion en listado de usuarios ([#139](https://github.com/org/backend/pull/139))
+
+### Documentation
+
+* actualizar guia de la API con nuevos endpoints ([#141](https://github.com/org/backend/pull/141))
+```
+
+### Alternativa: semantic-release
+
+```yaml
+# .github/workflows/release-semantic.yml — Alternativa con semantic-release
+name: Semantic Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0       # Necesario para analizar historial
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install semantic-release
+        run: |
+          npm install -g semantic-release \
+            @semantic-release/changelog \
+            @semantic-release/git \
+            conventional-changelog-conventionalcommits
+
+      - name: Run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
+```
+
+```json
+// .releaserc.json — Configuracion de semantic-release
+{
+  "branches": ["main"],
+  "plugins": [
+    ["@semantic-release/commit-analyzer", {
+      "preset": "conventionalcommits"
+    }],
+    ["@semantic-release/release-notes-generator", {
+      "preset": "conventionalcommits"
+    }],
+    ["@semantic-release/changelog", {
+      "changelogFile": "CHANGELOG.md"
+    }],
+    ["@semantic-release/git", {
+      "assets": ["CHANGELOG.md", "package.json"],
+      "message": "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}"
+    }],
+    "@semantic-release/github"
+  ]
+}
+```
+
+<Callout type="info" title="release-please vs semantic-release">
+  <strong>release-please</strong>: crea un PR de release que debes mergear manualmente,
+  dando control sobre cuando publicar. Ideal para equipos que quieren revisar el changelog.<br/>
+  <strong>semantic-release</strong>: publica automaticamente en cada push a main si hay
+  commits relevantes. Ideal para proyectos con CI/CD completamente automatizado.
+</Callout>
+</section>

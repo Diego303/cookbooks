@@ -1,0 +1,514 @@
+---
+title: "LangChain Agents"
+description: "Construcción de agentes con LangChain: tools, chains, memory y custom agents."
+intro: "Guía completa de creación de agentes inteligentes con LangChain y LangGraph. Cubre desde agentes básicos con tools hasta flujos multi-paso con LangGraph, memoria persistente, RAG y deployment."
+category: "AGENTIC AI"
+categoryColor: "red"
+icon: "link"
+tags: ["LangChain", "LLM", "Tools"]
+breadcrumb: ["Docs", "Agentic AI", "LangChain Agents"]
+order: 14
+toc:
+  - { id: "langchain-basics", label: "LangChain Basics" }
+  - { id: "tools-function-calling", label: "Tools & Function Calling" }
+  - { id: "langgraph-workflows", label: "LangGraph Workflows" }
+  - { id: "memory-persistence", label: "Memory & Persistence" }
+  - { id: "rag-integration", label: "RAG Integration" }
+  - { id: "streaming-errors", label: "Streaming & Error Handling" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="langchain-basics">
+<h2 class="doc-article__h2" id="langchain-basics">LangChain Basics</h2>
+
+LangChain proporciona abstracciones para interactuar con LLMs: **prompts**, **chains**, **tools** y **agents**. El flujo básico es: input → prompt → LLM → output parser.
+
+```text
+Componentes de LangChain
+
+┌─────────────────────────────────────────────────────────┐
+│                    LangChain Stack                      │
+│                                                         │
+│  ┌──────────┐  ┌────────────┐  ┌──────────────────────┐ │
+│  │ Prompts  │  │  Models    │  │  Output Parsers      │ │
+│  │ Templates│  │  ChatGPT  │  │  JSON, Pydantic     │ │
+│  │ Few-shot │  │  Claude   │  │  Structured Output  │ │
+│  └──────────┘  │  Ollama   │  └──────────────────────┘ │
+│                └────────────┘                           │
+│  ┌──────────┐  ┌────────────┐  ┌──────────────────────┐ │
+│  │ Chains   │  │  Agents   │  │  Memory             │ │
+│  │ LCEL     │  │  ReAct    │  │  Buffer, Summary    │ │
+│  │ RunnableS│  │  Tools    │  │  Redis, PostgreSQL  │ │
+│  └──────────┘  └────────────┘  └──────────────────────┘ │
+│  ┌──────────────────────────────────────────────┐       │
+│  │  Retrievers — Vector stores, BM25, Ensemble  │       │
+│  └──────────────────────────────────────────────┘       │
+└─────────────────────────────────────────────────────────┘
+```
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
+# ── Chain básico con LCEL (LangChain Expression Language) ──
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "Eres un asistente técnico experto en {domain}."),
+    ("human", "{question}"),
+])
+
+# LCEL: pipe operator para componer componentes
+chain = prompt | llm | StrOutputParser()
+
+# Invocar
+response = chain.invoke({
+    "domain": "Kubernetes",
+    "question": "¿Cómo funciona el HPA?",
+})
+```
+</section>
+
+<section id="tools-function-calling">
+<h2 class="doc-article__h2" id="tools-function-calling">Tools & Function Calling</h2>
+
+Las **tools** extienden al LLM con capacidades del mundo real: consultar bases de datos, llamar APIs, ejecutar código, buscar documentos, etc.
+
+```python
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+
+# ── Definir tools ──
+@tool
+def search_database(query: str) -> str:
+    """Busca información en la base de datos. Usar para consultas de datos."""
+    # Ejecutar query SQL...
+    return f"Resultados para: {query}"
+
+@tool
+def send_email(to: str, subject: str, body: str) -> str:
+    """Envía un email. Usar cuando el usuario pida notificar a alguien."""
+    # Enviar email...
+    return f"Email enviado a {to}"
+
+@tool
+def get_weather(city: str) -> str:
+    """Obtiene el clima actual de una ciudad."""
+    # Llamar API de clima...
+    return f"Clima en {city}: 22°C, soleado"
+
+# ── Crear agente con tools ──
+llm = ChatOpenAI(model="gpt-4o")
+llm_with_tools = llm.bind_tools([search_database, send_email, get_weather])
+
+# El LLM decide qué tool usar basándose en la pregunta
+response = llm_with_tools.invoke("¿Qué clima hace en Madrid?")
+print(response.tool_calls)
+# [{'name': 'get_weather', 'args': {'city': 'Madrid'}}]
+```
+
+<Callout type="tip" title="Docstrings de tools">
+  El LLM usa el **docstring** de cada tool para decidir cuándo usarla.
+  Escribe docstrings claros y específicos. Incluye cuándo usar la tool y cuándo no.
+</Callout>
+</section>
+
+<section id="langgraph-workflows">
+<h2 class="doc-article__h2" id="langgraph-workflows">LangGraph Workflows</h2>
+
+LangGraph construye agentes como **grafos de estados** con ciclos y branching. Es la evolución de los agents legacy de LangChain, con control explícito del flujo de ejecución.
+
+```text
+Flujo de un agente LangGraph (ReAct pattern)
+
+                    ┌─────────────┐
+                    │   START      │
+                    └──────┬──────┘
+                           │
+                    ┌──────▼──────┐
+             ┌─────│   Reason    │◀────────────┐
+             │     │  (LLM call) │             │
+             │     └──────┬──────┘             │
+             │            │                    │
+             │     ┌──────▼──────┐             │
+             │     │  ¿Tool call?│             │
+             │     └──┬──────┬───┘             │
+             │   No   │      │  Sí             │
+             │        │      │                 │
+      ┌──────▼──┐     │  ┌───▼─────────┐      │
+      │  END    │     │  │ Execute     │      │
+      │(respond)│     │  │ Tool(s)     │──────┘
+      └─────────┘     │  └─────────────┘
+                      │
+               ┌──────▼──┐
+               │  END    │
+               │(respond)│
+               └─────────┘
+```
+
+```python
+from langgraph.graph import StateGraph, MessagesState, START, END
+from langgraph.prebuilt import ToolNode, tools_condition
+from langchain_openai import ChatOpenAI
+
+# ── Definir modelo y tools ──
+llm = ChatOpenAI(model="gpt-4o")
+tools = [search_database, get_weather, send_email]
+llm_with_tools = llm.bind_tools(tools)
+
+# ── Nodo de reasoning ──
+def reasoning_node(state: MessagesState):
+    response = llm_with_tools.invoke(state["messages"])
+    return {"messages": [response]}
+
+# ── Construir grafo ──
+graph = StateGraph(MessagesState)
+graph.add_node("reason", reasoning_node)
+graph.add_node("tools", ToolNode(tools))
+
+# Flujo: START → reason → [tools → reason] → END
+graph.add_edge(START, "reason")
+graph.add_conditional_edges("reason", tools_condition)
+graph.add_edge("tools", "reason")
+
+# Compilar
+agent = graph.compile()
+
+# Ejecutar
+result = agent.invoke({
+    "messages": [("human", "¿Qué clima hace en Tokyo?")]
+})
+```
+</section>
+
+<section id="memory-persistence">
+<h2 class="doc-article__h2" id="memory-persistence">Memory & Persistence</h2>
+
+Los agentes necesitan memoria para mantener contexto entre conversaciones. LangGraph soporta **checkpointing** para persistir el estado del grafo.
+
+```python
+from langgraph.checkpoint.postgres import PostgresSaver
+
+# ── Persistir estado en PostgreSQL ──
+DB_URI = "postgresql://user:pass@localhost/agents"
+
+with PostgresSaver.from_conn_string(DB_URI) as checkpointer:
+    agent = graph.compile(checkpointer=checkpointer)
+
+    # Conversación con thread_id para identificar sesiones
+    config = {"configurable": {"thread_id": "user-123-session-1"}}
+
+    # Primer mensaje
+    result = agent.invoke(
+        {"messages": [("human", "Mi nombre es Diego")]},
+        config,
+    )
+
+    # Segundo mensaje — el agente recuerda el nombre
+    result = agent.invoke(
+        {"messages": [("human", "¿Cómo me llamo?")]},
+        config,
+    )
+    # → "Tu nombre es Diego"
+```
+
+<Callout type="info" title="Opciones de checkpointer">
+  LangGraph ofrece checkpointers para `PostgreSQL`,
+  `SQLite` y `Memory` (desarrollo).
+  En producción, siempre usa PostgreSQL para durabilidad.
+</Callout>
+</section>
+
+<section id="rag-integration">
+<h2 class="doc-article__h2" id="rag-integration">RAG Integration</h2>
+
+Retrieval-Augmented Generation (RAG) permite al agente consultar bases de conocimiento propias antes de responder, mejorando la precisión y reduciendo alucinaciones.
+
+```python
+from langchain_community.vectorstores import Chroma
+from langchain_openai import OpenAIEmbeddings
+from langchain_core.tools import tool
+
+# ── Crear vector store ──
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+vectorstore = Chroma.from_documents(
+    documents=docs,
+    embedding=embeddings,
+    persist_directory="./chroma_db",
+)
+retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+
+# ── Tool de RAG para el agente ──
+@tool
+def search_knowledge_base(query: str) -> str:
+    """Busca en la base de conocimiento interna. Usar para preguntas
+    sobre documentación, políticas o procedimientos de la empresa."""
+    docs = retriever.invoke(query)
+    return "\\n\\n".join(d.page_content for d in docs)
+
+# Añadir la tool de RAG al agente
+tools = [search_knowledge_base, search_database, send_email]
+```
+</section>
+
+<section id="streaming-errors">
+<h2 class="doc-article__h2" id="streaming-errors">Streaming & Error Handling</h2>
+
+En producción, los agentes necesitan **streaming** para dar feedback en tiempo real al usuario y **manejo robusto de errores** para recuperarse de fallos en tools o en el LLM sin perder el contexto de la conversación.
+
+```text
+Flujo de streaming con recuperación de errores
+
+┌──────────┐     ┌───────────┐     ┌──────────────┐
+│  Client  │◀────│ Streaming │◀────│  Agent       │
+│  (SSE)   │     │  Events   │     │  LangGraph   │
+└──────────┘     └───────────┘     └──────┬───────┘
+                                          │
+                                   ┌──────▼───────┐
+                                   │  Tool Call   │
+                                   └──────┬───────┘
+                                          │
+                                ┌─────────▼─────────┐
+                          Sí ◀──│  ¿Error / Timeout? │──▶ No
+                          │     └───────────────────┘     │
+                   ┌──────▼──────┐                 ┌──────▼──────┐
+                   │ Retry con   │                 │  Continuar  │
+                   │ backoff     │                 │  flujo      │
+                   └──────┬──────┘                 └─────────────┘
+                          │
+                   ┌──────▼──────┐
+                   │ ¿Max retry? │──▶ Sí → Fallback / Error graceful
+                   └──────┬──────┘
+                     No   │
+                     Reintentar
+```
+
+### Streaming de respuestas con astream_events
+
+El método `astream_events` de LangGraph permite enviar al frontend cada paso del agente en tiempo real: el razonamiento del LLM, las llamadas a tools y los resultados parciales.
+
+```python
+from langgraph.graph import StateGraph, MessagesState, START, END
+from langgraph.prebuilt import ToolNode, tools_condition
+from langchain_openai import ChatOpenAI
+
+# ── Agente con streaming completo ──
+llm = ChatOpenAI(model="gpt-4o", streaming=True)
+tools = [search_database, get_weather, send_email]
+llm_with_tools = llm.bind_tools(tools)
+
+def reasoning_node(state: MessagesState):
+    response = llm_with_tools.invoke(state["messages"])
+    return {"messages": [response]}
+
+graph = StateGraph(MessagesState)
+graph.add_node("reason", reasoning_node)
+graph.add_node("tools", ToolNode(tools))
+graph.add_edge(START, "reason")
+graph.add_conditional_edges("reason", tools_condition)
+graph.add_edge("tools", "reason")
+agent = graph.compile()
+
+# ── Streaming de eventos en tiempo real ──
+async def stream_agent_response(user_message: str):
+    """Stream completo del agente: tokens, tool calls, resultados."""
+    input_msg = {"messages": [("human", user_message)]}
+
+    async for event in agent.astream_events(input_msg, version="v2"):
+        kind = event["event"]
+
+        # Tokens del LLM llegando uno a uno
+        if kind == "on_chat_model_stream":
+            chunk = event["data"]["chunk"]
+            if chunk.content:
+                print(chunk.content, end="", flush=True)
+
+        # El agente decidió usar una tool
+        elif kind == "on_tool_start":
+            tool_name = event["name"]
+            tool_input = event["data"].get("input", {})
+            print(f"\n[Tool] {tool_name}({tool_input})")
+
+        # Resultado de la tool
+        elif kind == "on_tool_end":
+            tool_output = event["data"].get("output", "")
+            print(f"[Result] {tool_output[:200]}")
+
+# Ejecutar
+import asyncio
+asyncio.run(stream_agent_response("Busca el clima en Madrid y envía un email"))
+```
+
+### Manejo de errores en tools con ToolException
+
+Cuando una tool falla, el agente debe recibir un mensaje de error comprensible para decidir si reintentar, usar otra tool o informar al usuario. `ToolException` permite comunicar errores al LLM de forma controlada.
+
+```python
+from langchain_core.tools import tool, ToolException
+
+# ── Tool con manejo de errores ──
+@tool(handle_tool_error=True)
+def query_api(endpoint: str) -> str:
+    """Consulta la API interna. Devuelve datos JSON del endpoint solicitado."""
+    import httpx
+
+    try:
+        response = httpx.get(
+            f"https://api.internal.com{endpoint}",
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        return response.text
+    except httpx.TimeoutException:
+        raise ToolException(
+            f"Timeout al consultar {endpoint}. "
+            "La API no respondió en 10s. Intenta con otro endpoint o espera."
+        )
+    except httpx.HTTPStatusError as e:
+        raise ToolException(
+            f"Error HTTP {e.response.status_code} en {endpoint}. "
+            f"Mensaje: {e.response.text[:200]}"
+        )
+
+# ── Tool con fallback automático ──
+@tool
+def search_primary(query: str) -> str:
+    """Busca en el motor de búsqueda principal."""
+    # Si falla, el agente usará search_fallback
+    raise ToolException("Motor de búsqueda principal no disponible")
+
+@tool
+def search_fallback(query: str) -> str:
+    """Busca en el motor de búsqueda secundario. Usar si el principal falla."""
+    return f"Resultados de backup para: {query}"
+```
+
+### Retry con backoff exponencial para llamadas LLM
+
+Las APIs de LLM pueden fallar por rate limiting (429) o errores transitorios (500, 503). Implementar retry con backoff exponencial es esencial en producción.
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.runnables import RunnableConfig
+import asyncio
+
+# ── LLM con retry integrado ──
+# ChatOpenAI ya soporta retry nativo via max_retries
+llm = ChatOpenAI(
+    model="gpt-4o",
+    temperature=0,
+    max_retries=3,          # Reintentos automáticos para 429/500/503
+    request_timeout=30,     # Timeout por request individual
+)
+
+# ── Retry personalizado a nivel de nodo del grafo ──
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
+from openai import RateLimitError, APITimeoutError
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    retry=retry_if_exception_type((RateLimitError, APITimeoutError)),
+    before_sleep=lambda info: print(
+        f"Retry {info.attempt_number}/3 en {info.idle_for:.1f}s..."
+    ),
+)
+def reasoning_with_retry(state: MessagesState):
+    """Nodo de reasoning con retry y backoff exponencial."""
+    response = llm_with_tools.invoke(state["messages"])
+    return {"messages": [response]}
+```
+
+### Configuración de timeouts por nodo
+
+LangGraph permite configurar **timeouts globales** y por nodo para evitar que un agente quede colgado indefinidamente esperando una tool lenta o un LLM saturado.
+
+```python
+from langgraph.graph import StateGraph, MessagesState, START, END
+from langgraph.prebuilt import ToolNode, tools_condition
+import asyncio
+
+# ── Nodo con timeout individual ──
+async def reasoning_with_timeout(state: MessagesState):
+    """Reasoning node con timeout de 60 segundos."""
+    try:
+        response = await asyncio.wait_for(
+            llm_with_tools.ainvoke(state["messages"]),
+            timeout=60.0,
+        )
+        return {"messages": [response]}
+    except asyncio.TimeoutError:
+        # Devolver mensaje de error al agente para que se recupere
+        from langchain_core.messages import AIMessage
+        return {
+            "messages": [
+                AIMessage(content="El LLM tardó demasiado. Simplificando la consulta...")
+            ]
+        }
+
+# ── Timeout global para toda la ejecución del agente ──
+async def run_agent_with_global_timeout(user_message: str, timeout: float = 120.0):
+    """Ejecutar agente con timeout máximo de 2 minutos."""
+    try:
+        result = await asyncio.wait_for(
+            agent.ainvoke({"messages": [("human", user_message)]}),
+            timeout=timeout,
+        )
+        return {"status": "success", "result": result}
+    except asyncio.TimeoutError:
+        return {
+            "status": "timeout",
+            "error": f"El agente no completó en {timeout}s",
+        }
+
+# ── Agente completo con streaming, retry y error recovery ──
+async def production_agent(user_message: str):
+    """Agente production-ready con todas las protecciones."""
+    config = RunnableConfig(
+        configurable={"thread_id": "session-001"},
+        recursion_limit=15,  # Máximo 15 iteraciones del grafo
+    )
+
+    try:
+        async for event in agent.astream_events(
+            {"messages": [("human", user_message)]},
+            config=config,
+            version="v2",
+        ):
+            yield event
+    except Exception as e:
+        yield {
+            "event": "on_error",
+            "data": {"error": str(e), "type": type(e).__name__},
+        }
+```
+
+<div class="doc-table-wrapper custom-scroll">
+  <table class="doc-table">
+    <thead>
+      <tr><th>Parámetro</th><th>Valor recomendado</th><th>Propósito</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>`max_retries`</td><td>3</td><td>Reintentos automáticos para errores transitorios del LLM</td></tr>
+      <tr><td>`request_timeout`</td><td>30s</td><td>Timeout por llamada individual al LLM</td></tr>
+      <tr><td>`recursion_limit`</td><td>10-25</td><td>Máximo de iteraciones del grafo para evitar loops infinitos</td></tr>
+      <tr><td>Global timeout</td><td>120s</td><td>Timeout total de la ejecución del agente</td></tr>
+      <tr><td>`handle_tool_error`</td><td>`True`</td><td>Pasar errores de tools al LLM en vez de crashear</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<Callout type="warning" title="Recursion limit en producción">
+  Siempre configura `recursion_limit` en LangGraph. Sin límite, un agente
+  con tools defectuosas puede entrar en un loop infinito de llamadas al LLM,
+  consumiendo tokens y dinero sin control. Un valor de 15-25 es razonable
+  para la mayoría de casos de uso.
+</Callout>
+</section>

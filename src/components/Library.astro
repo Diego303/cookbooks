@@ -1,10 +1,24 @@
 ---
 /**
  * Library — Section 2: Searchable, filterable grid of documentation topics.
- * Contains the search bar, category filters, and card grid.
+ * Now sources data from Content Collection instead of topics.ts.
  */
+import { getCollection } from 'astro:content';
 import LibraryCard from './LibraryCard.astro';
-import { topics, categories } from '../data/topics';
+
+const categories = [
+  { label: 'Todos', value: 'all' },
+  { label: 'REST API', value: 'REST API', color: 'cyan' },
+  { label: 'UI KIT', value: 'UI KIT', color: 'pink' },
+  { label: 'DEVOPS', value: 'DEVOPS', color: 'yellow' },
+  { label: 'FRONTEND', value: 'FRONTEND', color: 'green' },
+  { label: 'BACKEND', value: 'BACKEND', color: 'purple' },
+  { label: 'ML', value: 'ML', color: 'orange' },
+  { label: 'AGENTIC AI', value: 'AGENTIC AI', color: 'red' },
+] as const;
+
+const docs = await getCollection('docs');
+const topics = docs.sort((a, b) => a.data.order - b.data.order);
 ---
 
 <section id="library" class="library">
@@ -49,12 +63,12 @@ import { topics, categories } from '../data/topics';
       {topics.map(topic => (
         <LibraryCard
           id={topic.id}
-          title={topic.title}
-          category={topic.category}
-          categoryColor={topic.categoryColor}
-          icon={topic.icon}
-          description={topic.description}
-          tags={topic.tags}
+          title={topic.data.title}
+          category={topic.data.category}
+          categoryColor={topic.data.categoryColor}
+          icon={topic.data.icon}
+          description={topic.data.description}
+          tags={topic.data.tags}
         />
       ))}
     </div>
@@ -282,25 +296,6 @@ import { topics, categories } from '../data/topics';
       activeCategory = btn.getAttribute('data-filter') || 'all';
       filterCards();
     });
-  });
-
-  // Card click — dispatch event for DocViewer
-  grid?.addEventListener('click', (e) => {
-    const card = e.target.closest('[data-topic-id]');
-    if (!card) return;
-    const topicId = card.getAttribute('data-topic-id');
-    document.dispatchEvent(new CustomEvent('topic:select', { detail: { topicId } }));
-  });
-
-  // Card keyboard support
-  grid?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      const card = e.target.closest('[data-topic-id]');
-      if (!card) return;
-      e.preventDefault();
-      const topicId = card.getAttribute('data-topic-id');
-      document.dispatchEvent(new CustomEvent('topic:select', { detail: { topicId } }));
-    }
   });
 
   // Random rotation for sticky note aesthetic
