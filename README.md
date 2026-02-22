@@ -2,7 +2,7 @@
 
 > **Una experiencia de documentación clara, eficiente y diseñada para desarrolladores.**
 
-Este repositorio contiene el código fuente para **Cookbooks**, un sitio de documentación single-page construido con **Astro**. Nuestro objetivo es ofrecer una lectura fluida, un mantenimiento sencillo y una arquitectura escalable.
+Este repositorio contiene el código fuente para **Cookbooks**, un sitio de documentación construido con **Astro**. Nuestro objetivo es ofrecer una lectura fluida, un mantenimiento sencillo y una arquitectura escalable.
 
 ---
 
@@ -11,7 +11,7 @@ Este repositorio contiene el código fuente para **Cookbooks**, un sitio de docu
 *   **⚡ Rendimiento Extremo:** Construido sobre Astro 5 para una velocidad inigualable.
 *   **📖 Lectura Optimizada:** Tipografía y espaciado cuidadosamente seleccionados para largas sesiones de lectura.
 *   **📱 Diseño Responsivo:** Perfectamente adaptable a escritorio, tablet y móvil.
-*   **🧭 Navegación Single-Page:** Acceso rápido a todas las secciones sin recargas.
+*   **🧭 Navegación:** Acceso rápido a todas las secciones sin recargas.
 *   **🎨 UI/UX Pragmático:** Diseño limpio enfocado en el contenido técnico.
 
 ## 🛠️ Tecnologías
