@@ -1,0 +1,386 @@
+---
+title: "Lab 20 — QA Bug Triage → Auto-Fix"
+description: "Bug reportado en issue tracker → Architect lee el ticket vía MCP → intenta fix → crea PR o escala."
+intro: "Flujo completo de QA automatizado: bugs reportados en un issue tracker son leídos por Architect vía MCP, corregidos con Ralph Loop, y documentados en PRs. Si falla, escala a intervención manual."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "bug"
+tags: ["Architect", "QA", "MCP"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 20"]
+order: 40
+toc:
+  - { id: "setup", label: "Setup" }
+  - { id: "paso-1-arrancar-mcp", label: "Paso 1: Arrancar MCP server" }
+  - { id: "paso-2-script-auto-fix", label: "Paso 2: Script de auto-fix" }
+  - { id: "paso-3-procesar-tickets", label: "Paso 3: Procesar tickets" }
+  - { id: "paso-4-verificar", label: "Paso 4: Verificar" }
+  - { id: "paso-5-crear-pr", label: "Paso 5: Crear PR" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+<Callout type="info" title="Nivel: Full-Stack">
+Duración estimada: 40 minutos. Features: `MCP`, `loop`, `guardrails`, `reports`, `sessions`, `budget`.
+</Callout>
+
+```bash
+mkdir -p ~/architect-labs/lab-20 && cd ~/architect-labs/lab-20
+git init && mkdir -p src tests mcp-servers reports scripts
+```
+
+### Crear código con bugs conocidos
+
+**src/string_processor.py**
+
+```python
+class StringProcessor:
+    def reverse(self, text):
+        # BUG: invierte caracteres en vez de palabras
+        return text[::-1]
+
+    def truncate(self, text, max_length, suffix="..."):
+        # BUG: no cuenta el suffix en el max_length
+        if len(text) > max_length:
+            return text[:max_length] + suffix
+        return text
+
+    def slugify(self, text):
+        # BUG: no maneja caracteres especiales ni múltiples espacios
+        return text.lower().replace(" ", "-")
+
+    def wrap(self, text, width):
+        # BUG: corta palabras a la mitad
+        lines = []
+        while len(text) > width:
+            lines.append(text[:width])
+            text = text[width:]
+        if text:
+            lines.append(text)
+        return "\n".join(lines)
+
+    def extract_emails(self, text):
+        # BUG: regex demasiado simple, no maneja subdominios
+        import re
+        return re.findall(r'\S+@\S+', text)
+```
+
+**tests/test_string_processor.py**
+
+```python
+import pytest
+from src.string_processor import StringProcessor
+
+@pytest.fixture
+def sp():
+    return StringProcessor()
+
+def test_reverse_words(sp):
+    assert sp.reverse("hello world foo") == "foo world hello"
+
+def test_truncate_with_suffix(sp):
+    result = sp.truncate("hello world", 8, "...")
+    assert len(result) <= 8
+    assert result.endswith("...")
+
+def test_slugify_special_chars(sp):
+    assert sp.slugify("Hello World!") == "hello-world"
+    assert sp.slugify("  multiple   spaces  ") == "multiple-spaces"
+    assert sp.slugify("cafe resume") == "cafe-resume"
+
+def test_wrap_no_split_words(sp):
+    result = sp.wrap("the quick brown fox jumps", 10)
+    for line in result.split("\n"):
+        assert not line.startswith(" ")
+
+def test_extract_emails(sp):
+    text = "Contact us at info@company.co.uk or admin@sub.domain.com"
+    emails = sp.extract_emails(text)
+    assert "info@company.co.uk" in emails
+    assert "admin@sub.domain.com" in emails
+    assert len(emails) == 2
+```
+
+### MCP Server mock (issue tracker)
+
+**mcp-servers/bug-tracker.py**
+
+```python
+import json
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+TICKETS = {
+    "BUG-101": {
+        "id": "BUG-101",
+        "title": "reverse() reverses chars not words",
+        "description": (
+            "StringProcessor.reverse('hello world') returns "
+            "'dlrow olleh' instead of 'world hello'"
+        ),
+        "severity": "HIGH",
+        "status": "open",
+        "label": "auto-fixable",
+        "file_hint": "src/string_processor.py",
+        "function_hint": "reverse"
+    },
+    "BUG-102": {
+        "id": "BUG-102",
+        "title": "truncate() exceeds max_length",
+        "description": (
+            "truncate('hello world', 8, '...') returns 11 chars. "
+            "Should return max 8 total including suffix."
+        ),
+        "severity": "MEDIUM",
+        "status": "open",
+        "label": "auto-fixable",
+        "file_hint": "src/string_processor.py",
+        "function_hint": "truncate"
+    },
+    "BUG-103": {
+        "id": "BUG-103",
+        "title": "slugify() fails with special chars",
+        "description": (
+            "slugify('Hello World!') leaves the '!' "
+            "and multiple spaces aren't collapsed."
+        ),
+        "severity": "MEDIUM",
+        "status": "open",
+        "label": "auto-fixable",
+        "file_hint": "src/string_processor.py",
+        "function_hint": "slugify"
+    }
+}
+
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        method = body.get("method", "")
+        params = body.get("params", {})
+
+        if method == "tools/list":
+            result = {"tools": [
+                {
+                    "name": "read_ticket",
+                    "description": "Read bug ticket",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"ticket_id": {"type": "string"}},
+                        "required": ["ticket_id"]
+                    }
+                },
+                {
+                    "name": "list_tickets",
+                    "description": "List tickets by label",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"label": {"type": "string"}}
+                    }
+                },
+                {
+                    "name": "add_comment",
+                    "description": "Comment on ticket",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ticket_id": {"type": "string"},
+                            "comment": {"type": "string"}
+                        },
+                        "required": ["ticket_id", "comment"]
+                    }
+                }
+            ]}
+        elif method == "tools/call":
+            name = params.get("name", "")
+            args = params.get("arguments", {})
+            if name == "read_ticket":
+                t = TICKETS.get(args["ticket_id"], None)
+                result = {"content": [{"type": "text", "text": json.dumps(t, indent=2)}]}
+            elif name == "list_tickets":
+                label = args.get("label", "auto-fixable")
+                tickets = [
+                    {"id": k, "title": v["title"], "severity": v["severity"]}
+                    for k, v in TICKETS.items()
+                    if v.get("label") == label
+                ]
+                result = {"content": [{"type": "text", "text": json.dumps(tickets, indent=2)}]}
+            elif name == "add_comment":
+                result = {"content": [{"type": "text",
+                    "text": f"Comment added to {args['ticket_id']}"}]}
+            else:
+                result = {"error": "unknown tool"}
+        else:
+            result = {}
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        response = {"jsonrpc": "2.0", "id": body.get("id"), "result": result}
+        self.wfile.write(json.dumps(response).encode())
+
+    def log_message(self, *a):
+        pass
+
+if __name__ == "__main__":
+    HTTPServer(("localhost", 8091), Handler).serve_forever()
+```
+
+### Configuración
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+mcp:
+  servers:
+    - name: bug-tracker
+      url: http://localhost:8091/mcp
+      auth:
+        type: none
+
+guardrails:
+  protected_files:
+    - "tests/**"
+    - "*.lock"
+  max_files_modified: 5
+
+costs:
+  budget_usd: 0.75
+```
+
+```bash
+git add -A && git commit -m "initial: string processor with bugs + MCP mock"
+```
+
+</section>
+
+<section id="paso-1-arrancar-mcp">
+<h2 class="doc-article__h2" id="paso-1-arrancar-mcp">Paso 1: Arrancar MCP server</h2>
+
+```bash
+python mcp-servers/bug-tracker.py &
+echo "Bug tracker MCP running"
+```
+
+</section>
+
+<section id="paso-2-script-auto-fix">
+<h2 class="doc-article__h2" id="paso-2-script-auto-fix">Paso 2: Script de auto-fix por ticket</h2>
+
+**scripts/auto-fix-ticket.sh**
+
+```bash
+#!/bin/bash
+TICKET_ID=$1
+
+echo "=== Processing $TICKET_ID ==="
+
+architect loop \
+  "Lee el ticket $TICKET_ID del bug tracker usando la tool MCP read_ticket. \
+   Entiende el bug, mira el código fuente indicado, y corrige el bug. \
+   El fix debe ser mínimo y los tests existentes deben pasar." \
+  --check "pytest tests/test_string_processor.py -v" \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --max-iterations 5 \
+  --budget 0.75 \
+  --report-file "reports/${TICKET_ID}.json"
+
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -eq 0 ]; then
+  echo "OK: $TICKET_ID fixed"
+else
+  echo "FAIL: $TICKET_ID needs manual intervention"
+fi
+```
+
+```bash
+chmod +x scripts/auto-fix-ticket.sh
+```
+
+<Callout type="tip" title="Consejo">
+Este patrón de script por ticket es escalable: puedes integrarlo en un webhook que se dispare cuando un ticket recibe la label "auto-fixable".
+</Callout>
+
+</section>
+
+<section id="paso-3-procesar-tickets">
+<h2 class="doc-article__h2" id="paso-3-procesar-tickets">Paso 3: Procesar tickets</h2>
+
+```bash
+# Fix cada ticket
+for ticket in BUG-101 BUG-102 BUG-103; do
+    bash scripts/auto-fix-ticket.sh "$ticket"
+    echo "---"
+done
+```
+
+</section>
+
+<section id="paso-4-verificar">
+<h2 class="doc-article__h2" id="paso-4-verificar">Paso 4: Verificar</h2>
+
+```bash
+export PYTHONPATH=.
+pytest tests/ -v
+
+# Ver reportes
+for f in reports/BUG-*.json; do
+    echo "=== $(basename $f) ==="
+    python3 -c "
+import json
+r = json.load(open('$f'))
+print(f'Status: {r[\"status\"]}, Cost: \${r[\"total_cost\"]:.4f}')
+"
+done
+```
+
+</section>
+
+<section id="paso-5-crear-pr">
+<h2 class="doc-article__h2" id="paso-5-crear-pr">Paso 5: Crear PR</h2>
+
+```bash
+git checkout -b fix/auto-fix-batch
+git add -A
+git commit -m "fix(BUG-101,102,103): auto-fix via architect + MCP
+
+Tickets fixed:
+- BUG-101: reverse() now reverses words
+- BUG-102: truncate() respects max_length including suffix
+- BUG-103: slugify() handles special chars and multiple spaces"
+```
+
+### Cleanup
+
+```bash
+kill %1 2>/dev/null  # Stop MCP server
+```
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+Este lab combina múltiples features de Architect en un flujo real de QA:
+
+| Componente | Rol |
+|------------|-----|
+| MCP | Lee tickets del bug tracker |
+| Ralph Loop | Itera fix → test hasta que pase |
+| Guardrails | Protege tests y archivos de config |
+| Budget | Limita coste por ticket |
+| Reports | Genera evidencia del fix para el PR |
+
+<Callout type="info" title="Siguiente lab">
+Lab 21: IaC con Guardrails — Infraestructura como código con protecciones.
+</Callout>
+
+</section>

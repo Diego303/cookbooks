@@ -1,0 +1,148 @@
+---
+title: "Architect Labs"
+description: "Laboratorios prácticos paso a paso para dominar cada feature de Architect v4."
+intro: "Laboratorios prácticos para aprender, probar y dominar Architect. Cada lab es autocontenido: incluye setup, archivos a crear, comandos a ejecutar y resultado esperado."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "flask-conical"
+tags: ["Architect", "Labs", "CLI"]
+breadcrumb: ["Docs", "Architect Labs", "Overview"]
+order: 20
+toc:
+  - { id: "requisitos-previos", label: "Requisitos Previos" }
+  - { id: "mapa-de-labs", label: "Mapa de Labs" }
+  - { id: "configuracion-base", label: "Configuración Base LiteLLM" }
+  - { id: "convencion-de-directorios", label: "Convención de Directorios" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="requisitos-previos">
+<h2 class="doc-article__h2" id="requisitos-previos">Requisitos Previos</h2>
+
+Antes de comenzar cualquier lab, asegúrate de tener instaladas las siguientes herramientas:
+
+- **Architect** instalado (`pip install architect-ai-cli`)
+- **LiteLLM** proxy configurado (o API key directa)
+- **Git** inicializado en cada lab (`git init`)
+- **Python 3.12+** con pytest
+- **Node.js 20+** (para labs de frontend)
+- **Docker** (para labs de contenedores)
+- **GitHub CLI** (`gh`) para labs de CI/CD
+
+```bash
+# Verificar instalación
+architect --version
+git --version
+python --version
+pytest --version
+```
+
+<Callout type="tip" title="Consejo">
+Si no tienes LiteLLM configurado, puedes usar una API key directa de OpenAI o cualquier proveedor compatible. Revisa la sección de Configuración Base más abajo.
+</Callout>
+
+</section>
+
+<section id="mapa-de-labs">
+<h2 class="doc-article__h2" id="mapa-de-labs">Mapa de Labs</h2>
+
+### Nivel Básico — Fundamentos
+
+| Lab | Título | Feature Principal | Duración |
+|-----|--------|-------------------|----------|
+| 01 | Hello Architect | `run` | 15 min |
+| 02 | Guardrails Fundamentals | `guardrails` | 20 min |
+| 03 | Hooks System | `hooks` | 20 min |
+| 04 | Tu Primer .architect.md | `.architect.md` | 15 min |
+| 05 | Reports & Exit Codes | `reports` | 15 min |
+| 06 | Dry Run & Preview | `dry-run` | 10 min |
+
+### Nivel Intermedio — Automatización
+
+| Lab | Título | Feature Principal | Duración |
+|-----|--------|-------------------|----------|
+| 07 | Ralph Loop: Fix→Test→Verify | `loop` | 30 min |
+| 08 | Pipeline Mode: Workflows Multi-Step | `pipeline` | 30 min |
+| 09 | Parallel Runs & Worktrees | `parallel` | 30 min |
+| 10 | Budget & Cost Control | `budget` | 20 min |
+| 11 | Sessions & Checkpoints | `sessions`, `checkpoints` | 25 min |
+| 12 | Code Rules Deep Dive | `code_rules` | 20 min |
+
+### Nivel Avanzado — Patrones Reales
+
+| Lab | Título | Features Combinadas | Duración |
+|-----|--------|---------------------|----------|
+| 13 | Sub-Agents & Writer/Reviewer | `sub-agents`, `pipeline` | 35 min |
+| 14 | MCP Integration | `MCP` | 30 min |
+| 15 | OTel Tracing | `OTel` | 30 min |
+| 16 | Competitive Eval: Modelo vs Modelo | `eval`, `parallel` | 25 min |
+
+### Nivel Full-Stack — Arquitecturas Completas
+
+| Lab | Título | Arquitectura | Duración |
+|-----|--------|-------------|----------|
+| 17 | Self-Healing CI/CD Pipeline | CI/CD | 45 min |
+| 18 | Security Remediation Pipeline | Security | 45 min |
+| 19 | Codebase Migration Factory | Development | 40 min |
+| 20 | QA Bug Triage → Auto-Fix | QA | 40 min |
+| 21 | IaC con Guardrails | DevOps | 40 min |
+| 22 | Docs-as-Code Pipeline | Development | 35 min |
+| 23 | Monorepo Dependency Updater | DevOps | 40 min |
+| 24 | AIOps Incident Remediation | SRE | 40 min |
+
+</section>
+
+<section id="configuracion-base">
+<h2 class="doc-article__h2" id="configuracion-base">Configuración Base para LiteLLM</h2>
+
+Todos los labs asumen esta configuración de LLM:
+
+```yaml
+# .architect.yaml (base)
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+```
+
+Si usas API directa sin LiteLLM:
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_key_env: OPENAI_API_KEY
+```
+
+<Callout type="info" title="Nota">
+Puedes cambiar el modelo a cualquiera compatible con la API de OpenAI. Los labs están diseñados para funcionar con GPT-4.1, Claude, o modelos locales a través de LiteLLM.
+</Callout>
+
+</section>
+
+<section id="convencion-de-directorios">
+<h2 class="doc-article__h2" id="convencion-de-directorios">Convención de Directorios</h2>
+
+Cada lab crea su propio directorio aislado:
+
+```bash
+mkdir -p ~/architect-labs/lab-XX
+cd ~/architect-labs/lab-XX
+git init
+```
+
+Esto asegura que cada lab sea completamente independiente. Puedes trabajarlos en cualquier orden, aunque se recomienda seguir la secuencia para construir conocimiento de forma progresiva.
+
+```text
+Estructura recomendada
+
+~/architect-labs/
+├── lab-01/          # Hello Architect
+├── lab-02/          # Guardrails
+├── lab-03/          # Hooks
+├── lab-04/          # .architect.md
+├── lab-05/          # Reports
+└── ...
+```
+
+</section>

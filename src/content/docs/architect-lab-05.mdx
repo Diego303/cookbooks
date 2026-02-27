@@ -1,0 +1,211 @@
+---
+title: "Lab 05 — Reports & Exit Codes"
+description: "Genera reportes JSON/Markdown de cada ejecución y usa exit codes para integrar con CI/CD."
+intro: "Aprende a generar reportes estructurados de cada ejecución de Architect y a usar exit codes para integrar con pipelines de CI/CD de forma programática."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "bar-chart-3"
+tags: ["Architect", "Reports", "CI/CD"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 05"]
+order: 25
+toc:
+  - { id: "setup", label: "Setup" }
+  - { id: "ejercicio-1-reporte-json", label: "Ejercicio 1: Reporte JSON" }
+  - { id: "ejercicio-2-reporte-markdown", label: "Ejercicio 2: Reporte Markdown" }
+  - { id: "ejercicio-3-exit-codes", label: "Ejercicio 3: Exit codes para CI/CD" }
+  - { id: "ejercicio-4-reportes-en-script", label: "Ejercicio 4: Reportes en script" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+<Callout type="info" title="Nivel: Básico">
+Duración estimada: 15 minutos. Features: `reports`, `exit-code-on-partial`.
+</Callout>
+
+```bash
+mkdir -p ~/architect-labs/lab-05 && cd ~/architect-labs/lab-05
+git init && mkdir -p src tests reports
+```
+
+**src/math_ops.py**
+
+```python
+def factorial(n):
+    if n < 0:
+        raise ValueError("Negative numbers not allowed")
+    if n == 0:
+        return 1
+    return n * factorial(n - 1)
+```
+
+**tests/test_math.py**
+
+```python
+from src.math_ops import factorial
+
+def test_factorial_zero():
+    assert factorial(0) == 1
+
+def test_factorial_positive():
+    assert factorial(5) == 120
+```
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+```
+
+```bash
+git add -A && git commit -m "initial"
+```
+
+</section>
+
+<section id="ejercicio-1-reporte-json">
+<h2 class="doc-article__h2" id="ejercicio-1-reporte-json">Ejercicio 1: Generar reporte JSON</h2>
+
+```bash
+architect run "Añade funciones fibonacci(n) y is_prime(n) en src/math_ops.py \
+  con tests completos en tests/test_math.py." \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --report-file reports/run-001.json
+```
+
+Examina el reporte:
+
+```bash
+cat reports/run-001.json | python -m json.tool
+```
+
+**El reporte contiene:**
+
+- **task** — la tarea ejecutada
+- **status** — `success`, `partial` o `failed`
+- **duration_seconds** — tiempo total
+- **steps** — número de pasos del agente
+- **total_cost** — coste en USD
+- **files_modified** — lista de archivos tocados con diff stats
+- **quality_gates** — resultado de verificaciones
+- **errors** — errores encontrados
+
+<Callout type="tip" title="Consejo">
+El reporte JSON es ideal para integraciones programáticas. Puedes parsearlo con `jq`, Python, o cualquier herramienta que procese JSON.
+</Callout>
+
+</section>
+
+<section id="ejercicio-2-reporte-markdown">
+<h2 class="doc-article__h2" id="ejercicio-2-reporte-markdown">Ejercicio 2: Reporte Markdown</h2>
+
+```bash
+architect run "Añade una función gcd(a, b) que calcule el máximo \
+  común divisor usando el algoritmo de Euclides." \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --report-file reports/run-002.md \
+  --report-format markdown
+```
+
+```bash
+cat reports/run-002.md
+```
+
+El formato Markdown es ideal para:
+
+- Pull request descriptions
+- Release notes automáticas
+- Documentación de cambios
+- Revisiones de código
+
+</section>
+
+<section id="ejercicio-3-exit-codes">
+<h2 class="doc-article__h2" id="ejercicio-3-exit-codes">Ejercicio 3: Exit codes para CI/CD</h2>
+
+Los exit codes permiten integrar Architect directamente en pipelines:
+
+```bash
+# Tarea exitosa -> exit code 0
+architect run "Añade docstrings a todas las funciones en src/math_ops.py" \
+  --config .architect.yaml --confirm-mode yolo
+echo "Exit code: $?"
+# -> 0
+```
+
+```bash
+# Tarea con exit-code-on-partial
+architect run "Corrige todos los errores de TypeScript en src/" \
+  --config .architect.yaml --confirm-mode yolo \
+  --exit-code-on-partial 1
+echo "Exit code: $?"
+# -> 1 si hubo corrección parcial, 0 si fue completa
+```
+
+<Callout type="warning" title="Importante">
+El flag `--exit-code-on-partial` es clave para CI/CD: te permite diferenciar entre éxito completo (exit 0) y corrección parcial (exit 1) para decidir si el pipeline continúa o se detiene.
+</Callout>
+
+</section>
+
+<section id="ejercicio-4-reportes-en-script">
+<h2 class="doc-article__h2" id="ejercicio-4-reportes-en-script">Ejercicio 4: Usar reportes en un script</h2>
+
+Ejemplo de integración de reportes en un script de CI:
+
+```bash
+#!/bin/bash
+# ci-check.sh — Ejemplo de uso de reportes en CI
+
+architect run "Revisa src/math_ops.py y corrige cualquier bug" \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --report-file reports/ci-run.json
+
+# Parsear el reporte
+STATUS=$(python -c "import json; print(json.load(open('reports/ci-run.json'))['status'])")
+FILES=$(python -c "import json; print(len(json.load(open('reports/ci-run.json'))['files_modified']))")
+
+echo "Status: $STATUS"
+echo "Files modified: $FILES"
+
+if [ "$STATUS" = "success" ]; then
+    echo "All good"
+    exit 0
+else
+    echo "Partial or failed"
+    exit 1
+fi
+```
+
+<Callout type="tip" title="Consejo">
+Combina reportes JSON con herramientas como `jq` para extraer datos específicos en pipelines más complejos:
+`jq '.files_modified[] | .path' reports/ci-run.json`
+</Callout>
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Flag | Descripción |
+|------|-------------|
+| `--report-file PATH` | Genera reporte en la ruta indicada |
+| `--report-format json/markdown` | Formato del reporte |
+| `--exit-code-on-partial N` | Exit code cuando el resultado es parcial |
+| Exit code 0 | Éxito completo |
+| Exit code 1 | Fallo o parcial (según config) |
+
+<Callout type="info" title="Siguiente lab">
+Lab 06: Dry Run & Preview — Previsualiza lo que Architect haría sin ejecutar nada.
+</Callout>
+
+</section>

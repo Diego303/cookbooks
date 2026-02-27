@@ -12,4 +12,5 @@ export const categories = [
   { label: 'BACKEND', value: 'BACKEND', color: 'purple' },
   { label: 'ML', value: 'ML', color: 'orange' },
   { label: 'AGENTIC AI', value: 'AGENTIC AI', color: 'red' },
+  { label: 'ARCHITECT LABS', value: 'ARCHITECT LABS', color: 'cyan' },
 ] as const;

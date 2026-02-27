@@ -1,0 +1,244 @@
+---
+title: "Lab 03 — Hooks System"
+description: "Ejecuta acciones automáticas antes y después de cada tool call: auto-format, lint, notificaciones."
+intro: "Configura hooks que se disparen en el lifecycle de Architect: antes de ejecutar un tool, después de editar un archivo, y al terminar la sesión."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "plug"
+tags: ["Architect", "Hooks", "Automation"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 03"]
+order: 23
+toc:
+  - { id: "objetivo", label: "Objetivo" }
+  - { id: "setup", label: "Setup" }
+  - { id: "ejercicio-1-post-tool-use", label: "Ejercicio 1: post_tool_use" }
+  - { id: "ejercicio-2-pre-tool-use", label: "Ejercicio 2: pre_tool_use" }
+  - { id: "ejercicio-3-session-end", label: "Ejercicio 3: session_end" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="objetivo">
+<h2 class="doc-article__h2" id="objetivo">Objetivo</h2>
+
+Configurar hooks que se disparen en el lifecycle de Architect: antes de ejecutar un tool, después de editar un archivo y al terminar la sesión.
+
+<Callout type="info" title="Nivel: Básico">
+Duración estimada: 20 minutos. Features: `post_tool_use`, `pre_tool_use`, `session_end`.
+</Callout>
+
+</section>
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+```bash
+mkdir -p ~/architect-labs/lab-03 && cd ~/architect-labs/lab-03
+git init
+pip install ruff --break-system-packages 2>/dev/null || pip install ruff
+mkdir -p src tests .architect/hooks
+```
+
+**src/utils.py** (código mal formateado a propósito)
+
+```python
+import os,sys
+from typing import List,Dict,Optional
+
+def   parse_config(   path:str   )->Dict:
+    """Lee un archivo de configuración."""
+    if not os.path.exists(  path  ):
+        raise FileNotFoundError(f"Config not found: {'{path}'}")
+    with open(path,'r') as f:
+        import json
+        return json.load(  f  )
+
+def   format_name(first:str,last:str)->str:
+    return f"{'{first}'}   {'{last}'}"  .strip()
+```
+
+**tests/test_utils.py**
+
+```python
+from src.utils import format_name
+
+def test_format_name():
+    assert format_name("John", "Doe") == "John   Doe"
+```
+
+```bash
+git add -A && git commit -m "initial: messy code"
+```
+
+</section>
+
+<section id="ejercicio-1-post-tool-use">
+<h2 class="doc-article__h2" id="ejercicio-1-post-tool-use">Ejercicio 1: Hook post_tool_use — Auto-format</h2>
+
+Crea un hook que ejecute `ruff format` después de cada edición de archivos Python.
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+hooks:
+  post_tool_use:
+    - name: python-autoformat
+      matcher: "write_file|edit_file"
+      file_patterns: ["*.py"]
+      command: "ruff format $ARCHITECT_FILE_PATH --quiet 2>/dev/null || true"
+      timeout: 10
+
+    - name: python-lint-check
+      matcher: "write_file|edit_file"
+      file_patterns: ["*.py"]
+      command: "ruff check $ARCHITECT_FILE_PATH --no-fix 2>/dev/null || true"
+      timeout: 10
+```
+
+Ejecuta una tarea:
+
+```bash
+architect run "Añade una función validate_email(email: str) -> bool \
+  en src/utils.py que use un regex básico para validar emails. \
+  Añade tests en tests/test_utils.py." \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+**Qué observar:**
+
+- Después de cada escritura en un `.py`, se ejecuta `ruff format` automáticamente
+- El código que escribe Architect queda auto-formateado
+- Los warnings de lint se pasan de vuelta al LLM como contexto
+
+```bash
+# Verificar que el código está formateado
+ruff check src/utils.py
+ruff format --check src/utils.py
+```
+
+<Callout type="tip" title="Consejo">
+El hook `post_tool_use` con matcher `write_file|edit_file` se dispara solo cuando Architect escribe o edita archivos. El `file_patterns` filtra aún más por extensión.
+</Callout>
+
+</section>
+
+<section id="ejercicio-2-pre-tool-use">
+<h2 class="doc-article__h2" id="ejercicio-2-pre-tool-use">Ejercicio 2: Hook pre_tool_use — Security check</h2>
+
+Crea un script que bloquee patrones peligrosos antes de que se escriban:
+
+**.architect/hooks/block-dangerous.sh**
+
+```bash
+#!/bin/bash
+# Bloquea escrituras que contengan patrones peligrosos
+FILE_PATH="$1"
+CONTENT="$2"
+
+if echo "$CONTENT" | grep -qE '(eval\(|exec\(|__import__|subprocess\.call)'; then
+    echo "BLOCKED: Dangerous pattern detected in $FILE_PATH"
+    exit 1
+fi
+
+exit 0
+```
+
+```bash
+chmod +x .architect/hooks/block-dangerous.sh
+```
+
+Actualiza `.architect.yaml`:
+
+```yaml
+hooks:
+  pre_tool_use:
+    - name: security-check
+      matcher: "write_file|edit_file"
+      command: ".architect/hooks/block-dangerous.sh"
+      timeout: 5
+
+  post_tool_use:
+    - name: python-autoformat
+      matcher: "write_file|edit_file"
+      file_patterns: ["*.py"]
+      command: "ruff format $ARCHITECT_FILE_PATH --quiet 2>/dev/null || true"
+      timeout: 10
+```
+
+Prueba con una tarea que intentaría usar eval:
+
+```bash
+architect run "Crea src/dynamic.py con una función que tome un string \
+  con una expresión matemática y la evalúe usando eval()." \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+**Resultado esperado:** El hook bloquea el uso de `eval()`.
+
+<Callout type="warning" title="Importante">
+Los hooks `pre_tool_use` pueden bloquear acciones devolviendo `exit 1`. Esto es más granular que los guardrails — puedes inspeccionar el contenido que Architect intenta escribir.
+</Callout>
+
+</section>
+
+<section id="ejercicio-3-session-end">
+<h2 class="doc-article__h2" id="ejercicio-3-session-end">Ejercicio 3: Hook session_end — Notificación</h2>
+
+**.architect/hooks/notify.sh**
+
+```bash
+#!/bin/bash
+# Notificación al terminar la sesión
+echo "$(date '+%Y-%m-%d %H:%M:%S') — Architect session finished" >> .architect/session-log.txt
+echo "Files modified: $(git diff --name-only | wc -l)" >> .architect/session-log.txt
+echo "---" >> .architect/session-log.txt
+```
+
+```bash
+chmod +x .architect/hooks/notify.sh
+mkdir -p .architect
+```
+
+Añade a `.architect.yaml`:
+
+```yaml
+hooks:
+  session_end:
+    - name: log-completion
+      command: ".architect/hooks/notify.sh"
+      async: true
+```
+
+Ejecuta cualquier tarea y verifica:
+
+```bash
+architect run "Añade docstrings a todas las funciones en src/utils.py" \
+  --config .architect.yaml --confirm-mode yolo
+
+cat .architect/session-log.txt
+```
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Hook | Cuándo se dispara | Caso de uso |
+|------|-------------------|-------------|
+| `pre_tool_use` | Antes de ejecutar un tool | Security check, validación |
+| `post_tool_use` | Después de ejecutar un tool | Auto-format, lint, tests |
+| `session_end` | Al terminar la sesión | Notificación, cleanup, log |
+
+<Callout type="info" title="Siguiente lab">
+Lab 04: Tu Primer .architect.md — Define convenciones del proyecto que Architect siempre respeta.
+</Callout>
+
+</section>

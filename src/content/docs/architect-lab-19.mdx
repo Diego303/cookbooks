@@ -1,0 +1,298 @@
+---
+title: "Lab 19 — Codebase Migration Factory"
+description: "8 módulos legacy por migrar. Parallel workers procesan cada archivo en worktrees aislados."
+intro: "Migración masiva de código legacy a Python moderno: 8 módulos procesados en paralelo con workers aislados en git worktrees, siguiendo reglas estrictas de migración."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "arrow-right-left"
+tags: ["Architect", "Migration", "Parallel"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 19"]
+order: 39
+toc:
+  - { id: "setup", label: "Setup" }
+  - { id: "paso-1-manifest", label: "Paso 1: Crear manifest" }
+  - { id: "paso-2-dry-run", label: "Paso 2: Dry run" }
+  - { id: "paso-3-migracion", label: "Paso 3: Ejecutar migración" }
+  - { id: "paso-4-verificar", label: "Paso 4: Verificar" }
+  - { id: "paso-5-crear-pr", label: "Paso 5: Crear PR" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+<Callout type="info" title="Nivel: Full-Stack">
+Duración estimada: 40 minutos. Features: `parallel`, `pipeline`, `.architect.md`, `guardrails`, `reports`, `dry-run`.
+</Callout>
+
+```bash
+mkdir -p ~/architect-labs/lab-19 && cd ~/architect-labs/lab-19
+git init && mkdir -p src tests
+```
+
+### Crear 8 módulos legacy (dict-based, sin type hints, sin dataclasses)
+
+```bash
+for module in user product order payment inventory notification shipping analytics; do
+cat > "src/${module}_legacy.py" << PYEOF
+class ${module^}Manager:
+    """Legacy ${module} manager — uses dicts, no type hints, no dataclasses."""
+
+    def __init__(self):
+        self.items = []
+        self.next_id = 1
+
+    def create(self, data):
+        item = dict(data)
+        item["id"] = self.next_id
+        self.next_id = self.next_id + 1
+        self.items.append(item)
+        return item
+
+    def get(self, id):
+        for item in self.items:
+            if item["id"] == id:
+                return item
+        return None
+
+    def update(self, id, data):
+        item = self.get(id)
+        if item is None:
+            return None
+        for key in data:
+            item[key] = data[key]
+        return item
+
+    def delete(self, id):
+        item = self.get(id)
+        if item is not None:
+            self.items.remove(item)
+            return True
+        return False
+
+    def list_all(self):
+        return list(self.items)
+
+    def search(self, field, value):
+        results = []
+        for item in self.items:
+            if field in item and item[field] == value:
+                results.append(item)
+        return results
+
+    def count(self):
+        return len(self.items)
+PYEOF
+done
+```
+
+### Crear tests para cada módulo
+
+```bash
+for module in user product order payment inventory notification shipping analytics; do
+cat > "tests/test_${module}_legacy.py" << PYEOF
+from src.${module}_legacy import ${module^}Manager
+
+def test_create():
+    m = ${module^}Manager()
+    item = m.create({"name": "test", "value": 42})
+    assert item["id"] == 1
+    assert item["name"] == "test"
+
+def test_get():
+    m = ${module^}Manager()
+    m.create({"name": "test"})
+    assert m.get(1) is not None
+    assert m.get(99) is None
+
+def test_update():
+    m = ${module^}Manager()
+    m.create({"name": "old"})
+    updated = m.update(1, {"name": "new"})
+    assert updated["name"] == "new"
+
+def test_delete():
+    m = ${module^}Manager()
+    m.create({"name": "test"})
+    assert m.delete(1) == True
+    assert m.get(1) is None
+
+def test_search():
+    m = ${module^}Manager()
+    m.create({"name": "Alice"})
+    m.create({"name": "Bob"})
+    results = m.search("name", "Alice")
+    assert len(results) == 1
+PYEOF
+done
+```
+
+### Verificar tests
+
+```bash
+export PYTHONPATH=.
+pytest tests/ -v
+# Todos deben pasar
+```
+
+### Configuración
+
+**.architect.md**
+
+```markdown
+# Migration Rules: Legacy Dict -> Modern Dataclass
+
+## OBLIGATORIO
+- Convertir todos los dict a @dataclass con type hints
+- Usar typing (Optional, List, etc.) donde corresponda
+- Añadir docstrings Google-style a clase y métodos públicos
+- Usar list comprehensions donde haya for loops simples
+- Añadir __repr__ y __str__ a las dataclasses
+- Usar Optional[T] para valores que pueden ser None
+- Mantener la misma API pública (mismos métodos, mismos params)
+
+## PROHIBIDO
+- No cambiar nombres de clases ni métodos
+- No cambiar la API pública
+- No modificar archivos de test
+- No añadir dependencias externas
+
+## VERIFICACION
+- Los tests existentes deben pasar sin modificación
+- El comportamiento debe ser idéntico
+```
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+guardrails:
+  protected_files:
+    - "tests/**"
+  max_files_modified: 2
+
+skills:
+  auto_discover: true
+
+costs:
+  budget_usd: 0.50
+```
+
+```bash
+git add -A && git commit -m "initial: 8 legacy modules"
+```
+
+</section>
+
+<section id="paso-1-manifest">
+<h2 class="doc-article__h2" id="paso-1-manifest">Paso 1: Crear manifest</h2>
+
+```bash
+find src/ -name "*_legacy.py" > files-to-migrate.txt
+echo "Archivos a migrar: $(wc -l < files-to-migrate.txt)"
+cat files-to-migrate.txt
+```
+
+</section>
+
+<section id="paso-2-dry-run">
+<h2 class="doc-article__h2" id="paso-2-dry-run">Paso 2: Dry run</h2>
+
+```bash
+architect parallel "Migra este módulo legacy a código moderno \
+  siguiendo las reglas de .architect.md. Convierte dicts a dataclasses, \
+  añade type hints, y mantén la API pública." \
+  --manifest files-to-migrate.txt \
+  --workers 1 \
+  --dry-run
+```
+
+<Callout type="tip" title="Consejo">
+Siempre haz dry-run con `--workers 1` primero. Esto valida que la migración funciona correctamente con un solo archivo antes de escalar a 4+ workers.
+</Callout>
+
+</section>
+
+<section id="paso-3-migracion">
+<h2 class="doc-article__h2" id="paso-3-migracion">Paso 3: Ejecutar migración</h2>
+
+```bash
+architect parallel "Migra este módulo legacy a código moderno \
+  siguiendo las reglas de .architect.md. Convierte dicts a dataclasses, \
+  añade type hints y docstrings." \
+  --manifest files-to-migrate.txt \
+  --workers 4 \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --report-file reports/migration.json
+```
+
+</section>
+
+<section id="paso-4-verificar">
+<h2 class="doc-article__h2" id="paso-4-verificar">Paso 4: Verificar</h2>
+
+```bash
+# Todos los tests deben pasar
+pytest tests/ -v
+
+# Verificar que se usan dataclasses
+for f in src/*_legacy.py; do
+    echo "=== $f ==="
+    grep -c "dataclass" "$f" || echo "  sin dataclass"
+    grep -c "->" "$f" || echo "  sin type hints"
+done
+
+# Ver reporte
+python3 -c "
+import json
+r = json.load(open('reports/migration.json'))
+for res in r.get('results', []):
+    status = 'OK' if res.get('success') else 'FAIL'
+    print(f'{status} {res[\"file\"]}')
+"
+```
+
+<Callout type="warning" title="Importante">
+Si algún módulo falla la migración, puedes re-ejecutar el parallel solo con los archivos fallidos creando un nuevo manifest con esos archivos específicos.
+</Callout>
+
+</section>
+
+<section id="paso-5-crear-pr">
+<h2 class="doc-article__h2" id="paso-5-crear-pr">Paso 5: Crear PR de migración</h2>
+
+```bash
+git checkout -b migration/legacy-to-modern
+git add -A
+git commit -m "refactor: migrate 8 legacy modules to modern Python
+
+- Dicts to dataclasses with type hints
+- Added docstrings (Google-style)
+- List comprehensions where applicable
+- All tests pass without modification"
+```
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Paso | Qué hace |
+|------|----------|
+| Manifest | Lista de archivos a procesar |
+| Dry run | Preview sin cambios |
+| Parallel | 4 workers procesan en paralelo |
+| Verify | Tests pasan, dataclasses presentes |
+
+<Callout type="info" title="Siguiente lab">
+Lab 20: QA Bug Triage Auto-Fix — Bug reportado en issue tracker, Architect lo corrige automáticamente.
+</Callout>
+
+</section>

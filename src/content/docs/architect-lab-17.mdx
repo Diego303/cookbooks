@@ -1,0 +1,370 @@
+---
+title: "Lab 17 — Self-Healing CI/CD Pipeline"
+description: "Tests fallan en CI, Architect los arregla automáticamente y crea PR con el fix."
+intro: "Arquitectura completa de self-healing: tests fallan en CI → Architect Ralph Loop aplica fix → crea PR con el fix → review. Si el budget se agota, escala a Slack."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "heart-pulse"
+tags: ["Architect", "CI/CD", "Self-Healing"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 17"]
+order: 37
+toc:
+  - { id: "arquitectura", label: "Arquitectura" }
+  - { id: "setup", label: "Setup" }
+  - { id: "paso-1-self-healing-loop", label: "Paso 1: Self-Healing Loop" }
+  - { id: "paso-2-verificar", label: "Paso 2: Verificar resultado" }
+  - { id: "paso-3-crear-pr", label: "Paso 3: Crear PR" }
+  - { id: "paso-4-github-actions", label: "Paso 4: GitHub Actions workflow" }
+  - { id: "paso-5-escalacion", label: "Paso 5: Flujo de escalación" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="arquitectura">
+<h2 class="doc-article__h2" id="arquitectura">Arquitectura</h2>
+
+<Callout type="info" title="Nivel: Full-Stack">
+Duración estimada: 45 minutos. Features: `loop`, `guardrails`, `reports`, `budget`, `.architect.md`, `exit-code-on-partial`.
+</Callout>
+
+```text
+Developer Push → CI Tests → FAIL → architect loop → FIX → Create PR → Review
+                                     |  (budget agotado)
+                                     +→ Escala a Slack
+```
+
+</section>
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+```bash
+mkdir -p ~/architect-labs/lab-17 && cd ~/architect-labs/lab-17
+git init && mkdir -p src tests .github/workflows reports
+```
+
+### Crear proyecto con tests que fallarán
+
+**src/order_processor.py**
+
+```python
+from datetime import datetime
+
+class OrderProcessor:
+    def __init__(self):
+        self.orders = []
+
+    def create_order(self, customer_id, items):
+        order = {
+            "id": len(self.orders) + 1,
+            "customer_id": customer_id,
+            "items": items,
+            "total": sum(item["price"] * item["qty"] for item in items),
+            "status": "pending",
+            "created_at": datetime.now().isoformat()
+        }
+        self.orders.append(order)
+        return order
+
+    def get_order(self, order_id):
+        for order in self.orders:
+            if order["id"] == order_id:
+                return order
+        return None
+
+    def cancel_order(self, order_id):
+        order = self.get_order(order_id)
+        if order is None:
+            raise ValueError(f"Order {'{order_id}'} not found")
+        # BUG: no verifica que el status sea cancelable
+        order["status"] = "cancelled"
+        return order
+
+    def apply_discount(self, order_id, percentage):
+        order = self.get_order(order_id)
+        if order is None:
+            raise ValueError(f"Order {'{order_id}'} not found")
+        # BUG: no valida rango de porcentaje
+        # BUG: no recalcula total individual de items
+        order["total"] = order["total"] * (1 - percentage / 100)
+        return order
+
+    def get_orders_by_customer(self, customer_id):
+        # BUG: no maneja customer_id=None
+        return [o for o in self.orders if o["customer_id"] == customer_id]
+```
+
+**tests/test_order_processor.py**
+
+```python
+import pytest
+from src.order_processor import OrderProcessor
+
+@pytest.fixture
+def processor():
+    p = OrderProcessor()
+    p.create_order("C001", [
+        {"name": "Widget", "price": 10.00, "qty": 2},
+        {"name": "Gadget", "price": 25.00, "qty": 1}
+    ])
+    p.create_order("C002", [
+        {"name": "Doohickey", "price": 5.00, "qty": 5}
+    ])
+    return p
+
+def test_create_order(processor):
+    order = processor.create_order("C003", [{"name": "Thing", "price": 15.00, "qty": 1}])
+    assert order["total"] == 15.00
+    assert order["status"] == "pending"
+
+def test_get_order(processor):
+    order = processor.get_order(1)
+    assert order["customer_id"] == "C001"
+    assert order["total"] == 45.00
+
+def test_cancel_pending_order(processor):
+    result = processor.cancel_order(1)
+    assert result["status"] == "cancelled"
+
+def test_cancel_already_shipped():
+    p = OrderProcessor()
+    order = p.create_order("C001", [{"name": "X", "price": 10, "qty": 1}])
+    order["status"] = "shipped"
+    with pytest.raises(ValueError, match="cannot be cancelled"):
+        p.cancel_order(order["id"])
+
+def test_cancel_nonexistent():
+    p = OrderProcessor()
+    with pytest.raises(ValueError):
+        p.cancel_order(999)
+
+def test_discount_valid(processor):
+    result = processor.apply_discount(1, 10)
+    assert result["total"] == pytest.approx(40.50)
+
+def test_discount_invalid_range(processor):
+    with pytest.raises(ValueError):
+        processor.apply_discount(1, 150)
+    with pytest.raises(ValueError):
+        processor.apply_discount(1, -10)
+
+def test_get_orders_by_customer(processor):
+    orders = processor.get_orders_by_customer("C001")
+    assert len(orders) == 1
+
+def test_get_orders_by_customer_none(processor):
+    orders = processor.get_orders_by_customer(None)
+    assert orders == []
+```
+
+### Verificar que los tests fallan
+
+```bash
+export PYTHONPATH=.
+pytest tests/ -v
+# Varios tests deben fallar
+```
+
+### Configuración de Architect
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+guardrails:
+  protected_files:
+    - ".env"
+    - "*.pem"
+    - "*.key"
+    - "docker-compose.yml"
+    - "Dockerfile"
+    - ".github/**"
+    - "tests/**"
+  max_files_modified: 5
+  code_rules:
+    - pattern: 'eval\('
+      severity: block
+    - pattern: 'exec\('
+      severity: block
+
+costs:
+  budget_usd: 0.50
+```
+
+**.architect.md**
+
+```markdown
+# Order Processor Conventions
+
+## Rules
+- Only fix the source code in src/ — never modify tests
+- Fix the minimum necessary to make tests pass
+- Do not change function signatures or public API
+- Add input validation where tests expect it
+- Use descriptive error messages in ValueError
+```
+
+```bash
+git add -A && git commit -m "initial: order processor with failing tests"
+```
+
+</section>
+
+<section id="paso-1-self-healing-loop">
+<h2 class="doc-article__h2" id="paso-1-self-healing-loop">Paso 1: Ejecutar el Self-Healing Loop</h2>
+
+```bash
+architect loop "Corrige los bugs en src/order_processor.py. \
+  Los tests en tests/test_order_processor.py definen el comportamiento \
+  correcto. Solo modifica código fuente, no los tests." \
+  --check "pytest tests/test_order_processor.py -v" \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --max-iterations 5 \
+  --budget 0.50 \
+  --report-file reports/fix-report.json \
+  --exit-code-on-partial 1
+```
+
+</section>
+
+<section id="paso-2-verificar">
+<h2 class="doc-article__h2" id="paso-2-verificar">Paso 2: Verificar resultado</h2>
+
+```bash
+# Tests
+pytest tests/ -v
+
+# Report
+python3 -c "
+import json
+r = json.load(open('reports/fix-report.json'))
+print(f'Status: {r[\"status\"]}')
+print(f'Iterations: {r.get(\"iterations\", \"?\")}')
+print(f'Cost: \${r[\"total_cost\"]:.4f}')
+for f in r.get('files_modified', []):
+    print(f'  Modified: {f[\"path\"]}')
+"
+
+# Git diff
+git diff src/order_processor.py
+```
+
+</section>
+
+<section id="paso-3-crear-pr">
+<h2 class="doc-article__h2" id="paso-3-crear-pr">Paso 3: Crear PR (simulado local)</h2>
+
+```bash
+git checkout -b architect/auto-fix
+git add -A
+git commit -m "fix: auto-remediation via architect Ralph Loop"
+```
+
+</section>
+
+<section id="paso-4-github-actions">
+<h2 class="doc-article__h2" id="paso-4-github-actions">Paso 4: Simular GitHub Actions workflow</h2>
+
+Crea el workflow que automatizaría esto en CI:
+
+**.github/workflows/self-healing.yml**
+
+```yaml
+name: Self-Healing Tests
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run tests
+        id: tests
+        run: |
+          export PYTHONPATH=.
+          pytest tests/ -q
+        continue-on-error: true
+
+      - name: Auto-fix con architect
+        if: steps.tests.outcome == 'failure'
+        run: |
+          pip install architect-ai-cli
+          architect loop "Corrige los tests que fallan." \
+            --check "pytest tests/ -q" \
+            --config .architect.yaml \
+            --confirm-mode yolo \
+            --budget 0.50 \
+            --max-iterations 5 \
+            --report-file fix-report.json \
+            --exit-code-on-partial 1
+        env:
+          LITELLM_API_KEY: ${{ secrets.LLM_KEY }}
+
+      - name: Crear PR con fix
+        if: steps.tests.outcome == 'failure' && success()
+        uses: peter-evans/create-pull-request@v6
+        with:
+          title: "[architect] Auto-fix: tests corregidos"
+          body-path: fix-report.json
+          branch: architect/auto-fix-${{ github.sha }}
+
+      - name: Notificar fallo
+        if: steps.tests.outcome == 'failure' && failure()
+        run: echo "Auto-fix falló. Necesita intervención manual."
+```
+
+<Callout type="danger" title="Precaución">
+En producción, el auto-fix PR siempre debe pasar por code review humano antes de merge. Nunca configures auto-merge para PRs generados por IA.
+</Callout>
+
+</section>
+
+<section id="paso-5-escalacion">
+<h2 class="doc-article__h2" id="paso-5-escalacion">Paso 5: Probar el flujo de escalación</h2>
+
+Fuerza un fallo con budget ultra-bajo:
+
+```bash
+git checkout main
+git checkout -- src/  # Reset código buggy
+
+architect loop "Corrige todos los bugs" \
+  --check "pytest tests/ -v" \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --max-iterations 1 \
+  --budget 0.02 \
+  --report-file reports/escalation-report.json
+
+echo "Exit code: $?"
+# Debería ser != 0 (escalación)
+```
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Componente | Rol |
+|------------|-----|
+| Ralph Loop | Fix → test → verify en bucle |
+| Guardrails | Protege tests, CI config, secrets |
+| Budget | Hard limit ($0.50) para ejecuciones nocturnas |
+| Report | JSON adjunto al PR como evidencia |
+| Exit codes | CI sabe si fue éxito o necesita escalación |
+
+<Callout type="info" title="Siguiente lab">
+Lab 18: Security Remediation Pipeline — Scanner detecta CVEs, pipeline los corrige.
+</Callout>
+
+</section>

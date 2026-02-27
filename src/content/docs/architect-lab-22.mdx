@@ -1,0 +1,348 @@
+---
+title: "Lab 22 — Docs-as-Code Pipeline"
+description: "Código cambia → Architect lee git diff → Writer genera docs → Reviewer verifica → PR de docs."
+intro: "Pipeline automatizado de documentación: cuando el código cambia, Architect analiza los cambios, genera documentación actualizada con un Writer, la verifica con un Reviewer, y crea un PR."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "book-open"
+tags: ["Architect", "Docs", "Pipeline"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 22"]
+order: 42
+toc:
+  - { id: "setup", label: "Setup" }
+  - { id: "paso-1-pipeline-docs", label: "Paso 1: Pipeline docs-sync" }
+  - { id: "paso-2-ejecutar", label: "Paso 2: Ejecutar" }
+  - { id: "paso-3-verificar", label: "Paso 3: Verificar" }
+  - { id: "paso-4-github-actions", label: "Paso 4: GitHub Actions workflow" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+<Callout type="info" title="Nivel: Full-Stack">
+Duración estimada: 35 minutos. Features: `pipeline`, `sub-agents`, `.architect.md`, `context-git-diff`, `guardrails`.
+</Callout>
+
+```bash
+mkdir -p ~/architect-labs/lab-22 && cd ~/architect-labs/lab-22
+git init && mkdir -p src docs pipelines
+```
+
+### Crear proyecto con código pero sin documentación
+
+**src/cache.py**
+
+```python
+import time
+from typing import Any, Optional
+from dataclasses import dataclass, field
+
+@dataclass
+class CacheEntry:
+    key: str
+    value: Any
+    created_at: float
+    ttl: int  # seconds
+    hits: int = 0
+
+class Cache:
+    """Simple in-memory cache with TTL support."""
+
+    def __init__(self, default_ttl: int = 300, max_size: int = 1000):
+        self._store: dict[str, CacheEntry] = {}
+        self.default_ttl = default_ttl
+        self.max_size = max_size
+        self.stats = {"hits": 0, "misses": 0, "evictions": 0}
+
+    def get(self, key: str) -> Optional[Any]:
+        entry = self._store.get(key)
+        if entry is None:
+            self.stats["misses"] += 1
+            return None
+        if self._is_expired(entry):
+            del self._store[key]
+            self.stats["misses"] += 1
+            return None
+        entry.hits += 1
+        self.stats["hits"] += 1
+        return entry.value
+
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+        if len(self._store) >= self.max_size and key not in self._store:
+            self._evict_oldest()
+        self._store[key] = CacheEntry(
+            key=key, value=value,
+            created_at=time.time(),
+            ttl=ttl or self.default_ttl
+        )
+
+    def delete(self, key: str) -> bool:
+        if key in self._store:
+            del self._store[key]
+            return True
+        return False
+
+    def clear(self) -> None:
+        self._store.clear()
+
+    def get_stats(self) -> dict:
+        return {**self.stats, "size": len(self._store)}
+
+    def _is_expired(self, entry: CacheEntry) -> bool:
+        return time.time() - entry.created_at > entry.ttl
+
+    def _evict_oldest(self) -> None:
+        if not self._store:
+            return
+        oldest_key = min(self._store, key=lambda k: self._store[k].created_at)
+        del self._store[oldest_key]
+        self.stats["evictions"] += 1
+```
+
+**src/rate_limiter.py**
+
+```python
+import time
+from collections import defaultdict
+from dataclasses import dataclass
+
+@dataclass
+class RateLimitConfig:
+    max_requests: int
+    window_seconds: int
+
+class RateLimiter:
+    """Token bucket rate limiter."""
+
+    def __init__(self, config: RateLimitConfig):
+        self.config = config
+        self._requests: dict[str, list[float]] = defaultdict(list)
+
+    def is_allowed(self, client_id: str) -> bool:
+        now = time.time()
+        window_start = now - self.config.window_seconds
+        self._requests[client_id] = [
+            t for t in self._requests[client_id] if t > window_start
+        ]
+        if len(self._requests[client_id]) >= self.config.max_requests:
+            return False
+        self._requests[client_id].append(now)
+        return True
+
+    def get_remaining(self, client_id: str) -> int:
+        now = time.time()
+        window_start = now - self.config.window_seconds
+        recent = [t for t in self._requests[client_id] if t > window_start]
+        return max(0, self.config.max_requests - len(recent))
+
+    def reset(self, client_id: str) -> None:
+        self._requests.pop(client_id, None)
+```
+
+**docs/README.md**
+
+```markdown
+# My Project
+
+TODO: Add documentation.
+```
+
+```bash
+git add -A && git commit -m "initial: cache and rate limiter modules"
+```
+
+### Hacer un cambio para simular un merge
+
+Añade funciones nuevas:
+
+```bash
+cat >> src/cache.py << 'PYEOF'
+
+    def get_or_set(self, key: str, factory, ttl: Optional[int] = None) -> Any:
+        """Get value from cache, or compute and store it if missing."""
+        value = self.get(key)
+        if value is not None:
+            return value
+        value = factory()
+        self.set(key, value, ttl)
+        return value
+
+    def keys(self) -> list[str]:
+        """Return all non-expired keys."""
+        now = time.time()
+        return [k for k, v in self._store.items()
+                if now - v.created_at <= v.ttl]
+PYEOF
+```
+
+```bash
+git add -A && git commit -m "feat: add get_or_set and keys to Cache"
+```
+
+### Configuración
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+agents:
+  build:
+    confirm_mode: yolo
+    max_steps: 50
+
+  reviewer:
+    system_prompt: >
+      Eres un technical writer reviewer. Tu trabajo es verificar que
+      la documentación es precisa comparándola con el código fuente real.
+      Lee siempre el código fuente para verificar.
+    allowed_tools: [read_file, search_code, grep, list_directory]
+    confirm_mode: yolo
+    max_steps: 20
+
+guardrails:
+  protected_files:
+    - "src/**"
+    - "tests/**"
+    - "*.py"
+  max_files_modified: 10
+```
+
+<Callout type="warning" title="Importante">
+Los `protected_files` incluyen `src/**` y `*.py` — el pipeline de docs solo puede modificar archivos en `docs/` y archivos markdown. El código fuente queda protegido.
+</Callout>
+
+</section>
+
+<section id="paso-1-pipeline-docs">
+<h2 class="doc-article__h2" id="paso-1-pipeline-docs">Paso 1: Pipeline docs-sync</h2>
+
+**pipelines/docs-update.yaml**
+
+```yaml
+name: docs-sync
+steps:
+  - name: analyze-changes
+    agent: build
+    task: >
+      Analiza los archivos de código en src/.
+      Identifica todas las clases, métodos públicos, y sus firmas.
+      Compara con la documentación existente en docs/.
+      Genera DOCS_PLAN.md con secciones a crear/actualizar:
+      - Qué clases/funciones necesitan documentación
+      - Qué docs existentes están desactualizados
+    checkpoint: true
+
+  - name: write-docs
+    agent: build
+    task: >
+      Siguiendo DOCS_PLAN.md:
+      1. Actualiza docs/README.md con overview del proyecto
+      2. Crea docs/cache.md con documentación de la clase Cache
+         (todos los métodos, params, returns, ejemplos de uso)
+      3. Crea docs/rate-limiter.md con documentación de RateLimiter
+         (config, métodos, ejemplos de uso)
+      Incluye ejemplos de código funcionales.
+
+  - name: review-docs
+    agent: reviewer
+    task: >
+      Lee cada archivo en docs/ y compara con el código fuente en src/.
+      Verifica:
+      1. Todas las firmas de métodos documentadas coinciden con el código
+      2. Los ejemplos de código son correctos y funcionarían
+      3. No faltan parámetros ni return types
+      4. La descripción de cada método es precisa
+      Si encuentras errores, escríbelos en REVIEW_NOTES.md.
+
+  - name: fix-and-format
+    agent: build
+    task: >
+      Lee REVIEW_NOTES.md (si existe y tiene findings).
+      Corrige los errores en la documentación.
+      Verifica que los links internos entre docs no están rotos.
+      Aplica formato markdown consistente.
+```
+
+<Callout type="tip" title="Consejo">
+El patrón analyze → write → review → fix es robusto: el reviewer (agente de solo lectura) garantiza que la documentación es fiel al código fuente real.
+</Callout>
+
+</section>
+
+<section id="paso-2-ejecutar">
+<h2 class="doc-article__h2" id="paso-2-ejecutar">Paso 2: Ejecutar</h2>
+
+```bash
+architect pipeline pipelines/docs-update.yaml \
+  --config .architect.yaml \
+  --report-file reports/docs-pipeline.json
+```
+
+</section>
+
+<section id="paso-3-verificar">
+<h2 class="doc-article__h2" id="paso-3-verificar">Paso 3: Verificar</h2>
+
+```bash
+# Ver docs generados
+ls docs/
+cat docs/README.md
+cat docs/cache.md
+cat docs/rate-limiter.md
+
+# Verificar que el código fuente NO fue tocado
+git diff src/
+# Debe estar vacío
+
+# Ver review notes
+cat REVIEW_NOTES.md 2>/dev/null || echo "No review notes"
+```
+
+</section>
+
+<section id="paso-4-github-actions">
+<h2 class="doc-article__h2" id="paso-4-github-actions">Paso 4: Simular GitHub Actions workflow</h2>
+
+**.github/workflows/docs-sync.yml**
+
+```yaml
+name: Docs Sync
+on:
+  push:
+    branches: [main]
+    paths: ['src/**']
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Update docs
+        run: |
+          architect pipeline pipelines/docs-update.yaml \
+            --config .architect.yaml \
+            --confirm-mode yolo \
+            --budget 0.30
+        env:
+          LITELLM_API_KEY: ${{ secrets.LLM_KEY }}
+
+      - uses: peter-evans/create-pull-request@v6
+        with:
+          title: "docs: sync with latest code changes"
+          branch: docs/auto-sync
+```
+
+<Callout type="info" title="Siguiente lab">
+Lab 23: Monorepo Dependency Updater — Actualización masiva de dependencias en paralelo.
+</Callout>
+
+</section>

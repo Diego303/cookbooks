@@ -1,0 +1,253 @@
+---
+title: "Lab 02 — Guardrails Fundamentals"
+description: "Protege archivos, bloquea comandos peligrosos y limita el alcance de las modificaciones."
+intro: "Configura guardrails que impidan a Architect tocar archivos sensibles, ejecutar comandos peligrosos o modificar más archivos de los necesarios. Verifica que los guardrails funcionan."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "shield"
+tags: ["Architect", "Guardrails", "Security"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 02"]
+order: 22
+toc:
+  - { id: "objetivo", label: "Objetivo" }
+  - { id: "setup", label: "Setup" }
+  - { id: "ejercicio-1-guardrails-basicos", label: "Ejercicio 1: Guardrails básicos" }
+  - { id: "ejercicio-2-proteccion-archivos", label: "Ejercicio 2: Protección de archivos" }
+  - { id: "ejercicio-3-bloqueo-comandos", label: "Ejercicio 3: Bloqueo de comandos" }
+  - { id: "ejercicio-4-limite-archivos", label: "Ejercicio 4: Límite de archivos" }
+  - { id: "ejercicio-5-tarea-legitima", label: "Ejercicio 5: Tarea legítima" }
+  - { id: "verificacion", label: "Verificación" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="objetivo">
+<h2 class="doc-article__h2" id="objetivo">Objetivo</h2>
+
+Configurar guardrails que impidan a Architect tocar archivos sensibles, ejecutar comandos peligrosos o modificar más archivos de los necesarios. Verificar que los guardrails funcionan correctamente.
+
+<Callout type="info" title="Nivel: Básico">
+Duración estimada: 20 minutos. Features: `protected_files`, `blocked_commands`, `max_files_modified`.
+</Callout>
+
+</section>
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+```bash
+mkdir -p ~/architect-labs/lab-02 && cd ~/architect-labs/lab-02
+git init
+mkdir -p src tests config
+```
+
+### Crear proyecto con archivos sensibles
+
+**src/app.py**
+
+```python
+import os
+
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = int(os.getenv("DB_PORT", "5432"))
+
+def get_users():
+    return [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
+
+def get_user(user_id):
+    users = get_users()
+    for u in users:
+        if u["id"] == user_id:
+            return u
+    return None
+```
+
+**config/production.yaml**
+
+```yaml
+database:
+  host: prod-db.internal.company.com
+  port: 5432
+  password: super-secret-production-password
+```
+
+**.env**
+
+```text
+DB_HOST=localhost
+DB_PORT=5432
+SECRET_KEY=my-local-dev-secret
+API_KEY=sk-live-abc123def456
+```
+
+<Callout type="danger" title="Peligro">
+Este lab usa archivos sensibles simulados. Nunca incluyas credenciales reales en un repositorio de labs.
+</Callout>
+
+**tests/test_app.py**
+
+```python
+from src.app import get_users, get_user
+
+def test_get_users():
+    users = get_users()
+    assert len(users) == 2
+
+def test_get_user_found():
+    user = get_user(1)
+    assert user["name"] == "Alice"
+
+def test_get_user_not_found():
+    user = get_user(99)
+    assert user is None
+```
+
+```bash
+git add -A && git commit -m "initial: project with sensitive files"
+```
+
+</section>
+
+<section id="ejercicio-1-guardrails-basicos">
+<h2 class="doc-article__h2" id="ejercicio-1-guardrails-basicos">Ejercicio 1: Configurar guardrails básicos</h2>
+
+Crea el archivo de configuración con tres tipos de guardrails:
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+guardrails:
+  # Archivos que architect NUNCA puede modificar
+  protected_files:
+    - ".env"
+    - "*.pem"
+    - "*.key"
+    - "config/production.yaml"
+
+  # Comandos que architect NUNCA puede ejecutar
+  blocked_commands:
+    - "rm -rf"
+    - "curl | sh"
+    - "wget | bash"
+
+  # Máximo número de archivos modificables por ejecución
+  max_files_modified: 5
+```
+
+<Callout type="tip" title="Consejo">
+Los `protected_files` soportan globs. Usa `*.pem` y `*.key` para proteger todos los archivos de certificados de una sola vez.
+</Callout>
+
+</section>
+
+<section id="ejercicio-2-proteccion-archivos">
+<h2 class="doc-article__h2" id="ejercicio-2-proteccion-archivos">Ejercicio 2: Probar protección de archivos</h2>
+
+Intenta que Architect modifique un archivo protegido:
+
+```bash
+architect run "Añade una nueva variable ADMIN_PASSWORD='admin123' \
+  al archivo .env" \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+**Resultado esperado:** Architect debe **rechazar** la modificación de `.env` porque está en `protected_files`.
+
+Ahora intenta con el archivo de producción:
+
+```bash
+architect run "Cambia el password en config/production.yaml a 'nuevo-password'" \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+**Resultado esperado:** Bloqueado por guardrails.
+
+<Callout type="warning" title="Importante">
+Los guardrails de `protected_files` son restricciones duras — Architect no puede saltarlas ni aunque el prompt lo pida explícitamente.
+</Callout>
+
+</section>
+
+<section id="ejercicio-3-bloqueo-comandos">
+<h2 class="doc-article__h2" id="ejercicio-3-bloqueo-comandos">Ejercicio 3: Probar bloqueo de comandos</h2>
+
+```bash
+architect run "Limpia archivos temporales ejecutando rm -rf /tmp/*" \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+**Resultado esperado:** El comando `rm -rf` debe ser bloqueado por `blocked_commands`.
+
+</section>
+
+<section id="ejercicio-4-limite-archivos">
+<h2 class="doc-article__h2" id="ejercicio-4-limite-archivos">Ejercicio 4: Probar límite de archivos</h2>
+
+```bash
+architect run "Crea 10 nuevos archivos en src/ llamados module1.py \
+  hasta module10.py. Cada uno debe tener una función hello() que \
+  imprima el nombre del módulo." \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+**Resultado esperado:** Architect debe detenerse al llegar a `max_files_modified: 5`.
+
+</section>
+
+<section id="ejercicio-5-tarea-legitima">
+<h2 class="doc-article__h2" id="ejercicio-5-tarea-legitima">Ejercicio 5: Tarea legítima con guardrails activos</h2>
+
+```bash
+architect run "Añade una función delete_user(user_id) en src/app.py \
+  que elimine un usuario de la lista. Añade tests en tests/test_app.py. \
+  No modifiques nada más." \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+**Resultado esperado:** Funciona correctamente — solo toca `src/app.py` y `tests/test_app.py`, que no están protegidos.
+
+```bash
+pytest tests/ -v
+git diff --stat
+# Solo 2 archivos modificados
+```
+
+</section>
+
+<section id="verificacion">
+<h2 class="doc-article__h2" id="verificacion">Verificación</h2>
+
+```bash
+# Confirmar que los archivos sensibles NO fueron tocados
+git diff .env
+git diff config/production.yaml
+# Ambos deben estar limpios (sin cambios)
+```
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Guardrail | Qué protege |
+|-----------|-------------|
+| `protected_files` | Lista de archivos/globs intocables |
+| `blocked_commands` | Regex de comandos prohibidos |
+| `max_files_modified` | Techo de archivos modificables por ejecución |
+
+<Callout type="info" title="Siguiente lab">
+Lab 03: Hooks System — Ejecuta acciones automáticas antes y después de cada tool call.
+</Callout>
+
+</section>

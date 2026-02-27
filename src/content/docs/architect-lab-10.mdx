@@ -1,0 +1,202 @@
+---
+title: "Lab 10 — Budget & Cost Control"
+description: "Hard limits de coste por ejecución. Imprescindible para CI/CD sin supervisión."
+intro: "Configura límites de presupuesto por ejecución para controlar el gasto de LLM. Esencial para pipelines de CI/CD donde Architect ejecuta sin supervisión humana."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "wallet"
+tags: ["Architect", "Budget", "Costs"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 10"]
+order: 30
+toc:
+  - { id: "setup", label: "Setup" }
+  - { id: "ejercicio-1-budget-config", label: "Ejercicio 1: Budget en config" }
+  - { id: "ejercicio-2-budget-cli", label: "Ejercicio 2: Budget por CLI" }
+  - { id: "ejercicio-3-budget-loop", label: "Ejercicio 3: Budget en Ralph Loop" }
+  - { id: "ejercicio-4-analisis-costes", label: "Ejercicio 4: Análisis de costes" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+<Callout type="info" title="Nivel: Intermedio">
+Duración estimada: 20 minutos. Features: `budget`, `costs`, `reports`.
+</Callout>
+
+```bash
+mkdir -p ~/architect-labs/lab-10 && cd ~/architect-labs/lab-10
+git init && mkdir -p src tests reports
+```
+
+**src/data_processor.py**
+
+```python
+def process_csv(filepath):
+    # TODO: implement
+    pass
+
+def validate_row(row):
+    # TODO: implement
+    pass
+```
+
+**tests/test_processor.py**
+
+```python
+from src.data_processor import process_csv, validate_row
+
+def test_process_csv_exists():
+    assert callable(process_csv)
+
+def test_validate_row_exists():
+    assert callable(validate_row)
+```
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+costs:
+  enabled: true
+  budget_usd: 0.25
+  warn_at_usd: 0.15
+```
+
+```bash
+git add -A && git commit -m "initial"
+```
+
+</section>
+
+<section id="ejercicio-1-budget-config">
+<h2 class="doc-article__h2" id="ejercicio-1-budget-config">Ejercicio 1: Budget en config</h2>
+
+```bash
+architect run "Implementa process_csv y validate_row con funcionalidad \
+  completa. process_csv debe leer un CSV, validar cada fila, y retornar \
+  las filas válidas. validate_row debe verificar que tiene campos \
+  name, email, age (age > 0). Añade tests completos." \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --report-file reports/budget-test.json
+```
+
+Al terminar, revisa el coste:
+
+```bash
+python3 -c "
+import json
+r = json.load(open('reports/budget-test.json'))
+print(f'Coste total: \${r[\"total_cost\"]:.4f}')
+print(f'Steps: {r[\"steps\"]}')
+print(f'Status: {r[\"status\"]}')
+"
+```
+
+<Callout type="tip" title="Consejo">
+El campo `warn_at_usd` imprime un warning cuando se alcanza el 60% del budget. Úsalo para monitorear el coste en ejecuciones largas.
+</Callout>
+
+</section>
+
+<section id="ejercicio-2-budget-cli">
+<h2 class="doc-article__h2" id="ejercicio-2-budget-cli">Ejercicio 2: Budget explícito por CLI</h2>
+
+```bash
+# Budget muy bajo — forzar que se detenga por presupuesto
+architect run "Genera un módulo completo de analytics con 10 funciones \
+  diferentes para análisis estadístico, cada una con tests exhaustivos." \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --budget 0.05 \
+  --report-file reports/low-budget.json
+
+echo "Exit code: $?"
+```
+
+Verifica por qué se detuvo:
+
+```bash
+python3 -c "
+import json
+r = json.load(open('reports/low-budget.json'))
+print(f'Status: {r[\"status\"]}')
+print(f'Coste: \${r[\"total_cost\"]:.4f}')
+print(f'Stop reason: {r.get(\"stop_reason\", \"N/A\")}')
+"
+```
+
+<Callout type="warning" title="Importante">
+El flag `--budget` del CLI hace override del `costs.budget_usd` del YAML. Esto te permite ajustar el presupuesto por ejecución sin modificar la configuración base.
+</Callout>
+
+</section>
+
+<section id="ejercicio-3-budget-loop">
+<h2 class="doc-article__h2" id="ejercicio-3-budget-loop">Ejercicio 3: Budget en Ralph Loop</h2>
+
+```bash
+architect loop "Implementa src/data_processor.py completo con manejo \
+  de errores robusto." \
+  --check "pytest tests/ -v" \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --max-iterations 10 \
+  --budget 0.30 \
+  --report-file reports/loop-budget.json
+```
+
+**Qué observar:** El loop se detiene por el primero que se alcance: `max_iterations` O `budget`.
+
+</section>
+
+<section id="ejercicio-4-analisis-costes">
+<h2 class="doc-article__h2" id="ejercicio-4-analisis-costes">Ejercicio 4: Análisis de costes post-ejecución</h2>
+
+Script para analizar todos los reportes generados:
+
+```python
+import json, os
+
+reports_dir = "reports"
+total_cost = 0
+
+for f in sorted(os.listdir(reports_dir)):
+    if f.endswith(".json"):
+        data = json.load(open(os.path.join(reports_dir, f)))
+        cost = data.get("total_cost", 0)
+        total_cost += cost
+        print(f"  {f}: ${cost:.4f} ({data.get('status', '?')})")
+
+print(f"\nTotal gastado: ${total_cost:.4f}")
+```
+
+<Callout type="tip" title="Consejo">
+Mantén un directorio `reports/` por proyecto y automatiza el análisis de costes. En CI/CD, puedes agregar un step que suba los costes a un dashboard o alerte si se excede un umbral.
+</Callout>
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Config/Flag | Descripción |
+|-------------|-------------|
+| `costs.budget_usd` | Hard limit en config YAML |
+| `costs.warn_at_usd` | Warning threshold |
+| `--budget N.NN` | Override de budget por CLI |
+| `total_cost` en report | Coste real de la ejecución |
+| `stop_reason` | Por qué se detuvo (budget, iterations, success) |
+
+<Callout type="info" title="Siguiente lab">
+Lab 11: Sessions & Checkpoints — Persistencia y reanudación de tareas.
+</Callout>
+
+</section>

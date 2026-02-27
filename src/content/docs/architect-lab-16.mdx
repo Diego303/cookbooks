@@ -1,0 +1,223 @@
+---
+title: "Lab 16 — Competitive Eval: Modelo vs Modelo"
+description: "Ejecuta la misma tarea con diferentes modelos en paralelo y compara: calidad, coste, velocidad."
+intro: "Usa <code>architect eval</code> para ejecutar la misma tarea con N modelos diferentes en paralelo. El reporte comparativo muestra tests pasados, coste, tiempo y archivos generados."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "trophy"
+tags: ["Architect", "Eval", "Benchmark"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 16"]
+order: 36
+toc:
+  - { id: "concepto-clave", label: "Concepto clave" }
+  - { id: "setup", label: "Setup" }
+  - { id: "ejercicio-1-eval-3-modelos", label: "Ejercicio 1: Eval con 3 modelos" }
+  - { id: "ejercicio-2-analizar-resultados", label: "Ejercicio 2: Analizar resultados" }
+  - { id: "ejercicio-3-eval-compleja", label: "Ejercicio 3: Eval con tarea compleja" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="concepto-clave">
+<h2 class="doc-article__h2" id="concepto-clave">Concepto clave</h2>
+
+<Callout type="info" title="Nivel: Avanzado">
+Duración estimada: 25 minutos. Features: `eval`, `parallel`, `reports`.
+</Callout>
+
+`architect eval` usa parallel runs para ejecutar la misma tarea con N modelos diferentes. El reporte comparativo muestra: tests pasados, coste, tiempo y archivos generados.
+
+</section>
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+```bash
+mkdir -p ~/architect-labs/lab-16 && cd ~/architect-labs/lab-16
+git init && mkdir -p src tests reports
+```
+
+**src/string_utils.py**
+
+```python
+# To be implemented by different models
+pass
+```
+
+**tests/test_string_utils.py**
+
+```python
+from src.string_utils import (
+    reverse_words, capitalize_words, count_vowels,
+    is_palindrome, caesar_cipher
+)
+
+def test_reverse_words():
+    assert reverse_words("hello world") == "world hello"
+
+def test_capitalize_words():
+    assert capitalize_words("hello world") == "Hello World"
+
+def test_count_vowels():
+    assert count_vowels("hello") == 2
+
+def test_is_palindrome():
+    assert is_palindrome("racecar") == True
+    assert is_palindrome("hello") == False
+
+def test_caesar_cipher():
+    assert caesar_cipher("abc", 1) == "bcd"
+    assert caesar_cipher("xyz", 3) == "abc"
+
+def test_caesar_cipher_decrypt():
+    assert caesar_cipher("bcd", -1) == "abc"
+```
+
+**.architect.yaml**
+
+```yaml
+llm:
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+```
+
+```bash
+git add -A && git commit -m "initial: eval setup"
+```
+
+</section>
+
+<section id="ejercicio-1-eval-3-modelos">
+<h2 class="doc-article__h2" id="ejercicio-1-eval-3-modelos">Ejercicio 1: Eval con 3 modelos</h2>
+
+```bash
+architect eval "Implementa las funciones en src/string_utils.py: \
+  reverse_words, capitalize_words, count_vowels, is_palindrome, \
+  caesar_cipher. Todos los tests en tests/test_string_utils.py \
+  deben pasar." \
+  --models openai/gpt-4.1,anthropic/claude-sonnet-4-20250514,deepseek/deepseek-chat \
+  --check "pytest tests/test_string_utils.py -v" \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --report-file reports/eval-comparison.json
+```
+
+**Qué observar:** 3 ejecuciones paralelas, una por modelo. Cada una en su worktree aislado.
+
+<Callout type="warning" title="Importante">
+Necesitas LiteLLM configurado con los 3 providers para que funcione. Si solo tienes uno, usa `--models openai/gpt-4.1,openai/gpt-4o-mini` para comparar modelos del mismo provider.
+</Callout>
+
+</section>
+
+<section id="ejercicio-2-analizar-resultados">
+<h2 class="doc-article__h2" id="ejercicio-2-analizar-resultados">Ejercicio 2: Analizar resultados</h2>
+
+```python
+import json
+
+report = json.load(open("reports/eval-comparison.json"))
+
+print("=" * 60)
+print(f"{'Model':<35} {'Tests':>6} {'Cost':>8} {'Time':>8}")
+print("=" * 60)
+
+for result in report.get("results", []):
+    model = result.get("model", "?")
+    tests = result.get("tests_passed", "?")
+    cost = result.get("cost", 0)
+    time = result.get("duration", 0)
+    passed = "PASS" if result.get("all_checks_passed") else "FAIL"
+    print(f"{passed} {model:<33} {tests:>6} ${cost:>7.4f} {time:>6.1f}s")
+
+print("=" * 60)
+```
+
+</section>
+
+<section id="ejercicio-3-eval-compleja">
+<h2 class="doc-article__h2" id="ejercicio-3-eval-compleja">Ejercicio 3: Eval con tarea más compleja</h2>
+
+Crea un escenario más exigente:
+
+**src/data_structures.py**
+
+```python
+# To be implemented
+pass
+```
+
+**tests/test_data_structures.py**
+
+```python
+from src.data_structures import Stack, Queue, LinkedList
+
+def test_stack_push_pop():
+    s = Stack()
+    s.push(1)
+    s.push(2)
+    assert s.pop() == 2
+    assert s.pop() == 1
+
+def test_stack_empty():
+    s = Stack()
+    assert s.is_empty() == True
+    s.push(1)
+    assert s.is_empty() == False
+
+def test_queue_enqueue_dequeue():
+    q = Queue()
+    q.enqueue(1)
+    q.enqueue(2)
+    assert q.dequeue() == 1
+    assert q.dequeue() == 2
+
+def test_linked_list():
+    ll = LinkedList()
+    ll.append(1)
+    ll.append(2)
+    ll.append(3)
+    assert ll.to_list() == [1, 2, 3]
+    assert ll.length() == 3
+
+def test_linked_list_remove():
+    ll = LinkedList()
+    ll.append(1)
+    ll.append(2)
+    ll.append(3)
+    ll.remove(2)
+    assert ll.to_list() == [1, 3]
+```
+
+```bash
+git add -A && git commit -m "add data structures eval"
+
+architect eval "Implementa Stack, Queue, y LinkedList en \
+  src/data_structures.py. Todos los tests deben pasar." \
+  --models openai/gpt-4.1,anthropic/claude-sonnet-4-20250514 \
+  --check "pytest tests/test_data_structures.py -v" \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --budget 0.30 \
+  --report-file reports/eval-structures.json
+```
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Flag | Descripción |
+|------|-------------|
+| `architect eval` | Ejecuta la misma tarea con múltiples modelos |
+| `--models a,b,c` | Lista de modelos a comparar (separados por coma) |
+| `--check CMD` | Comando de verificación (mismo para todos) |
+| Reporte | Comparativa por modelo: tests, coste, tiempo |
+| Requiere | LiteLLM configurado con múltiples providers |
+
+<Callout type="info" title="Siguiente lab">
+Lab 17: Self-Healing CI/CD — Arquitectura completa end-to-end.
+</Callout>
+
+</section>

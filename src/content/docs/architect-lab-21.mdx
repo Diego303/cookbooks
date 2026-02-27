@@ -1,0 +1,251 @@
+---
+title: "Lab 21 — IaC con Guardrails"
+description: "Genera Terraform con guardrails de infra: no buckets públicos, no SGs abiertos, no imágenes sin tag."
+intro: "Pipeline de 4 pasos para generar infraestructura como código con Terraform, protegido por guardrails y code_rules que impiden configuraciones inseguras como buckets públicos o security groups abiertos."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "cloud"
+tags: ["Architect", "Terraform", "IaC"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 21"]
+order: 41
+toc:
+  - { id: "setup", label: "Setup" }
+  - { id: "paso-1-pipeline-iac", label: "Paso 1: Pipeline de generación IaC" }
+  - { id: "paso-2-dry-run", label: "Paso 2: Dry run" }
+  - { id: "paso-3-ejecutar", label: "Paso 3: Ejecutar" }
+  - { id: "paso-4-verificar", label: "Paso 4: Verificar" }
+  - { id: "paso-5-guardrails", label: "Paso 5: Probar guardrails" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+<Callout type="info" title="Nivel: Full-Stack">
+Duración estimada: 40 minutos. Features: `pipeline`, `dry-run`, `guardrails`, `code_rules`, `.architect.md`, `reports`.
+</Callout>
+
+```bash
+mkdir -p ~/architect-labs/lab-21 && cd ~/architect-labs/lab-21
+git init && mkdir -p terraform pipelines reports
+# Instalar tfsec si disponible
+which tfsec || echo "tfsec no instalado — los scans se simularán"
+```
+
+### Configuración
+
+**.architect.md**
+
+```markdown
+# Terraform Conventions
+
+## Estructura
+- main.tf, variables.tf, outputs.tf, versions.tf por módulo
+- Nombres de recursos en snake_case (aws_security_group.api_ingress)
+- Variables con description y type obligatorios
+
+## Obligatorio
+- Tags en TODOS los recursos: Environment, Project, ManagedBy="terraform"
+- Encryption at rest siempre habilitado
+- Lifecycle prevent_destroy en recursos de datos
+- Variables sin valores default para secrets
+
+## Prohibido
+- No hardcodear IPs, ARNs, o account IDs
+- No usar default VPC
+- No security groups con 0.0.0.0/0 ingress
+- No S3 buckets con ACL public
+- No imágenes Docker sin tag fijo (:latest prohibido)
+```
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+guardrails:
+  protected_files:
+    - "*.tfstate"
+    - "*.tfstate.backup"
+    - ".terraform.lock.hcl"
+    - "backend.tf"
+  code_rules:
+    - pattern: 'acl\s*=\s*"public'
+      message: "S3 buckets must not be public"
+      severity: block
+    - pattern: 'cidr_blocks\s*=\s*\["0\.0\.0\.0/0"\]'
+      message: "Do not open security groups to 0.0.0.0/0"
+      severity: block
+    - pattern: 'image\s*=\s*"[^:]*"$'
+      message: "Docker images must have explicit tag"
+      severity: warn
+    - pattern: ':latest'
+      message: "Do not use :latest tag"
+      severity: warn
+  blocked_commands:
+    - "terraform apply"
+    - "terraform destroy"
+    - "kubectl delete"
+    - "aws s3 rm"
+  max_files_modified: 15
+
+skills:
+  auto_discover: true
+```
+
+```bash
+git add -A && git commit -m "initial: terraform project structure"
+```
+
+<Callout type="danger" title="Precaución">
+Los `blocked_commands` incluyen `terraform apply` y `terraform destroy`. Architect puede generar y planificar IaC, pero nunca ejecutar cambios directamente en infraestructura.
+</Callout>
+
+</section>
+
+<section id="paso-1-pipeline-iac">
+<h2 class="doc-article__h2" id="paso-1-pipeline-iac">Paso 1: Pipeline de generación IaC</h2>
+
+**pipelines/iac-generate.yaml**
+
+```yaml
+name: iac-generation
+steps:
+  - name: generate
+    agent: build
+    task: >
+      Genera archivos Terraform en terraform/ para:
+      - VPC con 2 subnets (pública y privada)
+      - Security Group para una API (solo puertos 443 y 80 desde CIDRs específicos)
+      - Redis ElastiCache cluster en la subnet privada
+      - S3 bucket para logs (privado, encriptado, versionado)
+      - IAM role para la aplicación con permisos mínimos
+
+      Genera: main.tf, variables.tf, outputs.tf, versions.tf
+      Sigue las convenciones de .architect.md.
+      Todos los recursos deben tener tags: Environment, Project, ManagedBy.
+    checkpoint: true
+
+  - name: validate
+    agent: build
+    task: >
+      Revisa los archivos Terraform generados en terraform/.
+      Verifica:
+      1. Todas las variables tienen type y description
+      2. Todos los recursos tienen tags requeridos
+      3. No hay CIDRs hardcodeados
+      4. Security groups no usan 0.0.0.0/0
+      5. S3 buckets son privados y encriptados
+      Si encuentras violaciones, corrígelas.
+      Escribe VALIDATION_RESULTS.md con lo encontrado.
+    checkpoint: true
+
+  - name: security-scan
+    agent: build
+    task: >
+      Analiza los archivos Terraform en terraform/ buscando:
+      1. Recursos sin encryption at rest
+      2. Security groups demasiado permisivos
+      3. IAM policies demasiado amplias
+      4. Recursos accesibles desde internet que no deberían
+      Corrige los findings de severidad HIGH.
+      Documenta en SECURITY_SCAN.md.
+    checkpoint: true
+
+  - name: document
+    agent: build
+    task: >
+      Genera terraform/README.md con:
+      - Qué recursos se crean y su propósito
+      - Variables requeridas con descripción
+      - Outputs disponibles
+      - Diagrama de infraestructura (formato mermaid)
+      - Instrucciones de uso (init, plan, apply)
+```
+
+</section>
+
+<section id="paso-2-dry-run">
+<h2 class="doc-article__h2" id="paso-2-dry-run">Paso 2: Dry run</h2>
+
+```bash
+architect pipeline pipelines/iac-generate.yaml \
+  --config .architect.yaml \
+  --dry-run
+```
+
+</section>
+
+<section id="paso-3-ejecutar">
+<h2 class="doc-article__h2" id="paso-3-ejecutar">Paso 3: Ejecutar</h2>
+
+```bash
+architect pipeline pipelines/iac-generate.yaml \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --report-file reports/iac-pipeline.json
+```
+
+</section>
+
+<section id="paso-4-verificar">
+<h2 class="doc-article__h2" id="paso-4-verificar">Paso 4: Verificar</h2>
+
+```bash
+# Listar archivos generados
+ls terraform/
+
+# Verificar que NO hay 0.0.0.0/0
+grep -rn "0.0.0.0/0" terraform/ || echo "OK: sin CIDRs abiertos"
+
+# Verificar que NO hay buckets públicos
+grep -rn "public" terraform/ | grep -i acl || echo "OK: sin buckets públicos"
+
+# Verificar tags
+grep -c "tags" terraform/main.tf
+
+# Ver README generado
+cat terraform/README.md
+
+# Ver report
+cat reports/iac-pipeline.json | python -m json.tool | head -30
+```
+
+</section>
+
+<section id="paso-5-guardrails">
+<h2 class="doc-article__h2" id="paso-5-guardrails">Paso 5: Probar guardrails en acción</h2>
+
+Intenta que Architect genere IaC insegura:
+
+```bash
+architect run "Añade un security group en terraform/main.tf que permita \
+  todo el tráfico desde 0.0.0.0/0 en todos los puertos." \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+**Resultado esperado:** El code_rule bloquea `0.0.0.0/0`.
+
+```bash
+architect run "Crea un S3 bucket con ACL public-read para servir \
+  assets estáticos." \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+**Resultado esperado:** El code_rule bloquea `acl = "public`.
+
+<Callout type="tip" title="Consejo">
+Los code_rules de Terraform son especialmente útiles en equipos grandes donde quieres garantizar compliance de seguridad independientemente de quién genere la IaC.
+</Callout>
+
+<Callout type="info" title="Siguiente lab">
+Lab 22: Docs-as-Code Pipeline — Código cambia, docs se actualizan automáticamente.
+</Callout>
+
+</section>

@@ -1,0 +1,248 @@
+---
+title: "Lab 13 — Sub-Agents & Writer/Reviewer"
+description: "Patrón Writer/Reviewer: un agente genera código, otro revisa y corrige. Sub-agentes especializados."
+intro: "Implementa el patrón Writer/Reviewer donde un agente <code>build</code> genera código y un agente <code>reviewer</code> lo verifica contra el código fuente real. Si encuentra problemas, un tercer step los corrige."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "users"
+tags: ["Architect", "Sub-Agents", "Review"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 13"]
+order: 33
+toc:
+  - { id: "concepto-clave", label: "Concepto clave" }
+  - { id: "setup", label: "Setup" }
+  - { id: "ejercicio-1-writer-reviewer", label: "Ejercicio 1: Pipeline Writer/Reviewer" }
+  - { id: "ejercicio-2-auto-review", label: "Ejercicio 2: Auto-review en run" }
+  - { id: "ejercicio-3-sub-agentes", label: "Ejercicio 3: Sub-agentes especializados" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="concepto-clave">
+<h2 class="doc-article__h2" id="concepto-clave">Concepto clave</h2>
+
+<Callout type="info" title="Nivel: Avanzado">
+Duración estimada: 35 minutos. Features: `sub-agents`, `pipeline`, `auto-review`.
+</Callout>
+
+Un pipeline puede usar diferentes agentes en cada step. El patrón más útil: un agente `build` genera código, y un agente `reviewer` lo verifica contra el código fuente real (no contra su memoria). Si encuentra problemas, un tercer step `fix` los corrige.
+
+</section>
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+```bash
+mkdir -p ~/architect-labs/lab-13 && cd ~/architect-labs/lab-13
+git init && mkdir -p src tests pipelines
+```
+
+**src/auth.py**
+
+```python
+import hashlib
+import os
+
+class AuthService:
+    def __init__(self):
+        self.users = {}
+
+    def register(self, username, password):
+        if username in self.users:
+            raise ValueError(f"User {'{username}'} already exists")
+        salt = os.urandom(32)
+        key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000)
+        self.users[username] = {"salt": salt, "key": key}
+        return True
+
+    def login(self, username, password):
+        if username not in self.users:
+            return False
+        user = self.users[username]
+        key = hashlib.pbkdf2_hmac('sha256', password.encode(), user["salt"], 100000)
+        return key == user["key"]
+```
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+agents:
+  build:
+    confirm_mode: yolo
+    max_steps: 50
+
+  reviewer:
+    system_prompt: >
+      Eres un code reviewer senior. Tu trabajo es encontrar bugs,
+      problemas de seguridad, y violaciones de buenas prácticas.
+      Siempre lees el código fuente real (no confíes en tu memoria).
+      Sé específico: indica archivo, línea, y fix sugerido.
+    allowed_tools: [read_file, search_code, grep, list_directory]
+    confirm_mode: yolo
+    max_steps: 20
+
+guardrails:
+  max_files_modified: 15
+```
+
+```bash
+git add -A && git commit -m "initial"
+```
+
+<Callout type="tip" title="Consejo">
+El agente `reviewer` tiene `allowed_tools` limitados a solo lectura. No puede editar archivos — solo inspeccionar y reportar.
+</Callout>
+
+</section>
+
+<section id="ejercicio-1-writer-reviewer">
+<h2 class="doc-article__h2" id="ejercicio-1-writer-reviewer">Ejercicio 1: Pipeline Writer/Reviewer</h2>
+
+**pipelines/auth-expand.yaml**
+
+```yaml
+name: auth-expansion
+steps:
+  - name: write
+    agent: build
+    task: >
+      Expande src/auth.py con:
+      1. Token-based sessions (genera token en login, valida en check_session)
+      2. Password requirements (min 8 chars, al menos 1 número, 1 mayúscula)
+      3. Rate limiting (max 5 intentos de login por usuario en 5 min)
+      4. Change password (requiere password actual)
+      Genera tests en tests/test_auth.py.
+    checkpoint: true
+
+  - name: review
+    agent: reviewer
+    task: >
+      Revisa src/auth.py y tests/test_auth.py generados en el step anterior.
+      Verifica:
+      1. Los tokens son suficientemente aleatorios?
+      2. El rate limiting tiene race conditions?
+      3. Los tests cubren edge cases (empty password, expired token)?
+      4. Hay timing attacks en las comparaciones?
+      Escribe REVIEW_NOTES.md con findings organizados por severidad.
+
+  - name: fix
+    agent: build
+    task: >
+      Lee REVIEW_NOTES.md y corrige todos los findings de severidad
+      HIGH y MEDIUM. Para findings LOW, añade un comentario TODO.
+      Ejecuta pytest tests/test_auth.py para verificar que todo pasa.
+    checkpoint: true
+```
+
+```bash
+architect pipeline pipelines/auth-expand.yaml \
+  --config .architect.yaml \
+  --report-file reports/auth-pipeline.json
+```
+
+**Qué observar:**
+
+- Step 1 (build): genera código
+- Step 2 (reviewer): lee el código con tools de lectura (**NO puede editar**)
+- Step 3 (build): corrige basándose en el review
+
+```bash
+cat REVIEW_NOTES.md
+pytest tests/test_auth.py -v
+```
+
+</section>
+
+<section id="ejercicio-2-auto-review">
+<h2 class="doc-article__h2" id="ejercicio-2-auto-review">Ejercicio 2: Auto-review en run</h2>
+
+```bash
+architect run "Añade a src/auth.py un método revoke_all_sessions(username) \
+  que invalide todas las sesiones activas de un usuario. Añade tests." \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --auto-review
+```
+
+Con `--auto-review`, Architect automáticamente ejecuta un agente reviewer después de que el build termine, y aplica las correcciones si encuentra problemas.
+
+</section>
+
+<section id="ejercicio-3-sub-agentes">
+<h2 class="doc-article__h2" id="ejercicio-3-sub-agentes">Ejercicio 3: Sub-agentes especializados</h2>
+
+**pipelines/full-service.yaml**
+
+```yaml
+name: full-service
+steps:
+  - name: design
+    agent: build
+    task: >
+      Crea DESIGN.md con la especificación de un UserService que incluya:
+      CRUD de usuarios, búsqueda, paginación, y export. Define la API
+      pública (métodos, params, returns) sin implementar.
+
+  - name: implement
+    agent: build
+    task: >
+      Implementa el diseño de DESIGN.md en src/user_service.py.
+      Usa dataclasses para User. Implementa todos los métodos.
+
+  - name: test
+    agent: build
+    task: >
+      Genera tests exhaustivos en tests/test_user_service.py.
+      Usa fixtures de pytest. Cubre todos los métodos y edge cases.
+      Ejecuta pytest para verificar.
+
+  - name: security-review
+    agent: reviewer
+    task: >
+      Revisa src/user_service.py buscando:
+      1. Inyección en búsquedas
+      2. Leaks de datos sensibles
+      3. Falta de validación de input
+      Escribe findings en SECURITY_REVIEW.md.
+
+  - name: harden
+    agent: build
+    task: >
+      Corrige los findings de SECURITY_REVIEW.md.
+      Añade validaciones y sanitización donde haga falta.
+      Re-ejecuta tests.
+```
+
+```bash
+architect pipeline pipelines/full-service.yaml \
+  --config .architect.yaml
+```
+
+<Callout type="tip" title="Consejo">
+Este pipeline de 5 pasos (design → implement → test → review → harden) es un patrón robusto para generar código seguro y bien testeado.
+</Callout>
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Concepto | Descripción |
+|----------|-------------|
+| `agents.reviewer` | Agente con permisos de solo lectura |
+| `allowed_tools` | Limita qué tools puede usar un agente |
+| Writer/Reviewer | Patrón: uno genera, otro verifica |
+| `--auto-review` | Auto-review después de cada run |
+| Sub-agentes | Agentes especializados en steps del pipeline |
+
+<Callout type="info" title="Siguiente lab">
+Lab 14: MCP Integration — Conecta Architect a herramientas externas vía MCP.
+</Callout>
+
+</section>

@@ -1,0 +1,215 @@
+---
+title: "Lab 15 — OpenTelemetry Tracing"
+description: "Traza completa de la ejecución del agente: cada llamada LLM, cada tool call, costes y duraciones."
+intro: "Architect emite spans OpenTelemetry siguiendo las GenAI Semantic Conventions. Cada span incluye modelo, tokens, coste y duración. Visualiza las trazas en Jaeger para debuggear y optimizar."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "activity"
+tags: ["Architect", "OTel", "Tracing"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 15"]
+order: 35
+toc:
+  - { id: "concepto-clave", label: "Concepto clave" }
+  - { id: "setup", label: "Setup" }
+  - { id: "ejercicio-1-configurar-otel", label: "Ejercicio 1: Configurar OTel" }
+  - { id: "ejercicio-2-ejecutar-trazas", label: "Ejercicio 2: Ejecutar con trazas" }
+  - { id: "ejercicio-3-jaeger", label: "Ejercicio 3: Visualizar en Jaeger" }
+  - { id: "ejercicio-4-trazas-loop", label: "Ejercicio 4: Trazas en Ralph Loop" }
+  - { id: "ejercicio-5-exportar-json", label: "Ejercicio 5: Exportar trazas a JSON" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="concepto-clave">
+<h2 class="doc-article__h2" id="concepto-clave">Concepto clave</h2>
+
+<Callout type="info" title="Nivel: Avanzado">
+Duración estimada: 30 minutos. Features: `OTel`, `telemetry`.
+</Callout>
+
+Architect emite spans OpenTelemetry siguiendo las **GenAI Semantic Conventions**. Cada span incluye: modelo, tokens, coste, duración. La traza completa permite debuggear y optimizar ejecuciones.
+
+</section>
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+```bash
+mkdir -p ~/architect-labs/lab-15 && cd ~/architect-labs/lab-15
+git init && mkdir -p src tests
+```
+
+### Levantar Jaeger para visualizar trazas
+
+```bash
+docker run -d --name jaeger \
+  -p 16686:16686 \
+  -p 4317:4317 \
+  -p 4318:4318 \
+  jaegertracing/all-in-one:latest
+
+echo "Jaeger UI: http://localhost:16686"
+```
+
+### Proyecto de ejemplo
+
+**src/analyzer.py**
+
+```python
+def analyze_text(text):
+    words = text.split()
+    return {
+        "word_count": len(words),
+        "char_count": len(text),
+        "unique_words": len(set(w.lower() for w in words))
+    }
+```
+
+**tests/test_analyzer.py**
+
+```python
+from src.analyzer import analyze_text
+
+def test_analyze():
+    result = analyze_text("hello world hello")
+    assert result["word_count"] == 3
+    assert result["unique_words"] == 2
+```
+
+```bash
+git add -A && git commit -m "initial"
+```
+
+</section>
+
+<section id="ejercicio-1-configurar-otel">
+<h2 class="doc-article__h2" id="ejercicio-1-configurar-otel">Ejercicio 1: Configurar OTel</h2>
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+telemetry:
+  enabled: true
+  exporter: otlp
+  endpoint: http://localhost:4317
+```
+
+</section>
+
+<section id="ejercicio-2-ejecutar-trazas">
+<h2 class="doc-article__h2" id="ejercicio-2-ejecutar-trazas">Ejercicio 2: Ejecutar con trazas</h2>
+
+```bash
+architect run "Expande src/analyzer.py con funciones: \
+  sentiment_score(text) que devuelva -1..1, \
+  readability_score(text) con Flesch-Kincaid, \
+  extract_keywords(text, top_n=5). \
+  Añade tests para todas." \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+</section>
+
+<section id="ejercicio-3-jaeger">
+<h2 class="doc-article__h2" id="ejercicio-3-jaeger">Ejercicio 3: Visualizar en Jaeger</h2>
+
+Abre `http://localhost:16686` en el navegador. Busca el servicio "architect" y encuentra la traza:
+
+```text
+architect.session
+├── architect.llm.call (model=gpt-4.1, tokens_in=X, tokens_out=Y, cost=$Z)
+│   └── duration: Xms
+├── architect.tool.read_file (path=src/analyzer.py)
+├── architect.llm.call (model=gpt-4.1, ...)
+├── architect.tool.write_file (path=src/analyzer.py)
+├── architect.tool.write_file (path=tests/test_analyzer.py)
+├── architect.llm.call (model=gpt-4.1, ...)
+└── architect.tool.run_command (command=pytest)
+```
+
+<Callout type="tip" title="Consejo">
+En Jaeger puedes filtrar por duración para encontrar las llamadas LLM más lentas, o por tags para filtrar por modelo o coste.
+</Callout>
+
+</section>
+
+<section id="ejercicio-4-trazas-loop">
+<h2 class="doc-article__h2" id="ejercicio-4-trazas-loop">Ejercicio 4: Trazas en Ralph Loop</h2>
+
+```bash
+architect loop "Corrige cualquier test que falle en tests/" \
+  --check "pytest tests/ -v" \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --max-iterations 3
+```
+
+Cada iteración del Ralph Loop genera su propio span:
+
+```text
+architect.session
+├── architect.ralph.iteration.1
+│   ├── architect.llm.call
+│   ├── architect.tool.edit_file
+│   └── architect.check (command=pytest, passed=false)
+├── architect.ralph.iteration.2
+│   ├── architect.llm.call
+│   ├── architect.tool.edit_file
+│   └── architect.check (command=pytest, passed=true)
+└── architect.ralph.complete (iterations=2, success=true)
+```
+
+</section>
+
+<section id="ejercicio-5-exportar-json">
+<h2 class="doc-article__h2" id="ejercicio-5-exportar-json">Ejercicio 5: Exportar trazas a JSON</h2>
+
+Alternativa sin Jaeger — exportar a archivo JSON:
+
+```yaml
+# Alternativa: exportar a archivo JSON
+telemetry:
+  enabled: true
+  exporter: json-file
+  endpoint: traces/
+```
+
+```bash
+architect run "Añade docstrings a src/analyzer.py" \
+  --config .architect.yaml --confirm-mode yolo
+
+ls traces/
+# architect-trace-XXXXXX.json
+```
+
+### Cleanup
+
+```bash
+docker stop jaeger && docker rm jaeger
+```
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Config | Descripción |
+|--------|-------------|
+| `telemetry.enabled` | Activa tracing |
+| `telemetry.exporter` | otlp, json-file, console |
+| `telemetry.endpoint` | URL del collector |
+| Spans | session, llm.call, tool.*, check, ralph.iteration |
+| Attributes | model, tokens, cost, duration, file_path |
+
+<Callout type="info" title="Siguiente lab">
+Lab 16: Competitive Eval — Compara modelos con la misma tarea.
+</Callout>
+
+</section>

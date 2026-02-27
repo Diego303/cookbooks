@@ -1,0 +1,325 @@
+---
+title: "Lab 14 — MCP Integration"
+description: "Conecta Architect a herramientas externas vía Model Context Protocol: Jira, GitHub, Datadog."
+intro: "MCP (Model Context Protocol) permite que Architect acceda a herramientas externas como si fueran tools nativas. En este lab crearás un MCP server mock y lo integrarás con Architect."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "cable"
+tags: ["Architect", "MCP", "Integration"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 14"]
+order: 34
+toc:
+  - { id: "concepto-clave", label: "Concepto clave" }
+  - { id: "setup", label: "Setup" }
+  - { id: "ejercicio-1-arrancar-mcp", label: "Ejercicio 1: Arrancar MCP server" }
+  - { id: "ejercicio-2-configurar-mcp", label: "Ejercicio 2: Configurar Architect con MCP" }
+  - { id: "ejercicio-3-leer-y-corregir", label: "Ejercicio 3: Leer tickets y corregir bugs" }
+  - { id: "ejercicio-4-comentar-ticket", label: "Ejercicio 4: Comentar en ticket" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="concepto-clave">
+<h2 class="doc-article__h2" id="concepto-clave">Concepto clave</h2>
+
+<Callout type="info" title="Nivel: Avanzado">
+Duración estimada: 30 minutos. Feature principal: `MCP`.
+</Callout>
+
+MCP (Model Context Protocol) permite que Architect acceda a herramientas externas como si fueran tools nativas. Architect actúa como **MCP client** que se conecta a **MCP servers**.
+
+</section>
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+```bash
+mkdir -p ~/architect-labs/lab-14 && cd ~/architect-labs/lab-14
+git init && mkdir -p src tests mcp-servers
+```
+
+### Crear un MCP server mock local
+
+Un servidor MCP simple que simula un issue tracker:
+
+**mcp-servers/issue-tracker.py**
+
+```python
+"""MCP Server mock que simula un issue tracker."""
+import json
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+# Base de datos en memoria
+ISSUES = {
+    "BUG-001": {
+        "id": "BUG-001",
+        "title": "NullPointerException in UserService.getUser()",
+        "description": "When user_id is None, getUser() throws NPE instead of returning None",
+        "severity": "HIGH",
+        "status": "open",
+        "reporter": "qa-team",
+        "stack_trace": (
+            "Traceback (most recent call last):\n"
+            "  File \"src/services/user_service.py\", line 15, in get_user\n"
+            "    return self.users[user_id]\n"
+            "KeyError: None"
+        ),
+        "steps_to_reproduce": [
+            "1. Call get_user(None)",
+            "2. Observe KeyError instead of None return"
+        ]
+    },
+    "BUG-002": {
+        "id": "BUG-002",
+        "title": "Off-by-one in pagination",
+        "description": "get_users(page=2, size=10) returns items 11-19 instead of 11-20",
+        "severity": "MEDIUM",
+        "status": "open",
+        "reporter": "frontend-team",
+        "stack_trace": "",
+        "steps_to_reproduce": [
+            "1. Add 25 users",
+            "2. Call get_users(page=2, size=10)",
+            "3. Observe only 9 results instead of 10"
+        ]
+    }
+}
+
+class MCPHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        content_length = int(self.headers['Content-Length'])
+        body = json.loads(self.rfile.read(content_length))
+        method = body.get("method", "")
+        params = body.get("params", {})
+
+        if method == "tools/list":
+            result = {
+                "tools": [
+                    {
+                        "name": "read_issue",
+                        "description": "Read a bug ticket by ID",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {"issue_id": {"type": "string"}},
+                            "required": ["issue_id"]
+                        }
+                    },
+                    {
+                        "name": "list_issues",
+                        "description": "List all open issues",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "status": {"type": "string", "default": "open"}
+                            }
+                        }
+                    },
+                    {
+                        "name": "add_comment",
+                        "description": "Add a comment to an issue",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "issue_id": {"type": "string"},
+                                "comment": {"type": "string"}
+                            },
+                            "required": ["issue_id", "comment"]
+                        }
+                    }
+                ]
+            }
+        elif method == "tools/call":
+            tool_name = params.get("name", "")
+            args = params.get("arguments", {})
+            if tool_name == "read_issue":
+                issue = ISSUES.get(args["issue_id"])
+                result = {"content": [{"type": "text", "text": json.dumps(issue, indent=2)}]}
+            elif tool_name == "list_issues":
+                issues = [
+                    {"id": k, "title": v["title"], "severity": v["severity"]}
+                    for k, v in ISSUES.items()
+                    if v["status"] == args.get("status", "open")
+                ]
+                result = {"content": [{"type": "text", "text": json.dumps(issues, indent=2)}]}
+            elif tool_name == "add_comment":
+                result = {"content": [{"type": "text",
+                    "text": f"Comment added to {args['issue_id']}"}]}
+            else:
+                result = {"error": f"Unknown tool: {tool_name}"}
+        else:
+            result = {"error": f"Unknown method: {method}"}
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        response = {"jsonrpc": "2.0", "id": body.get("id"), "result": result}
+        self.wfile.write(json.dumps(response).encode())
+
+    def log_message(self, format, *args):
+        pass
+
+if __name__ == "__main__":
+    server = HTTPServer(("localhost", 8090), MCPHandler)
+    print("MCP Issue Tracker running on http://localhost:8090")
+    server.serve_forever()
+```
+
+### Crear el código buggy
+
+**src/user_service.py**
+
+```python
+class UserService:
+    def __init__(self):
+        self.users = {}
+        self._next_id = 1
+
+    def add_user(self, name, email):
+        user_id = self._next_id
+        self._next_id += 1
+        self.users[user_id] = {"id": user_id, "name": name, "email": email}
+        return user_id
+
+    def get_user(self, user_id):
+        # BUG: No maneja user_id=None
+        return self.users[user_id]
+
+    def get_users(self, page=1, size=10):
+        # BUG: off-by-one en paginación
+        all_users = list(self.users.values())
+        start = (page - 1) * size
+        end = start + size - 1  # BUG: debería ser start + size
+        return all_users[start:end]
+```
+
+**tests/test_user_service.py**
+
+```python
+import pytest
+from src.user_service import UserService
+
+@pytest.fixture
+def service():
+    s = UserService()
+    for i in range(25):
+        s.add_user(f"User{'{i}'}", f"user{'{i}'}@test.com")
+    return s
+
+def test_get_user_none(service):
+    result = service.get_user(None)
+    assert result is None
+
+def test_pagination_page2(service):
+    page2 = service.get_users(page=2, size=10)
+    assert len(page2) == 10
+```
+
+```bash
+git add -A && git commit -m "initial: buggy service + mock MCP"
+```
+
+</section>
+
+<section id="ejercicio-1-arrancar-mcp">
+<h2 class="doc-article__h2" id="ejercicio-1-arrancar-mcp">Ejercicio 1: Arrancar el MCP server</h2>
+
+```bash
+# Terminal 1: arrancar el MCP mock
+python mcp-servers/issue-tracker.py &
+MCP_PID=$!
+echo "MCP server running (PID: $MCP_PID)"
+```
+
+</section>
+
+<section id="ejercicio-2-configurar-mcp">
+<h2 class="doc-article__h2" id="ejercicio-2-configurar-mcp">Ejercicio 2: Configurar Architect con MCP</h2>
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+mcp:
+  servers:
+    - name: issue-tracker
+      url: http://localhost:8090/mcp
+      auth:
+        type: none
+
+guardrails:
+  protected_files:
+    - "tests/**"
+  max_files_modified: 5
+```
+
+<Callout type="tip" title="Consejo">
+Los MCP servers se configuran en la sección `mcp.servers`. Las tools expuestas por el server aparecen automáticamente como tools nativas para Architect.
+</Callout>
+
+</section>
+
+<section id="ejercicio-3-leer-y-corregir">
+<h2 class="doc-article__h2" id="ejercicio-3-leer-y-corregir">Ejercicio 3: Architect lee tickets y corrige bugs</h2>
+
+```bash
+architect run "Usa la tool MCP list_issues para ver los bugs abiertos. \
+  Luego lee el detalle de cada bug con read_issue. \
+  Corrige los bugs en src/user_service.py según la descripción \
+  de cada ticket. Ejecuta los tests para verificar." \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --report-file reports/mcp-run.json
+```
+
+**Qué observar:**
+
+- Architect llama `list_issues` para ver bugs
+- Llama `read_issue` para cada bug
+- Lee el stack trace y steps to reproduce
+- Aplica los fixes en el código
+
+```bash
+export PYTHONPATH=.
+pytest tests/ -v
+```
+
+</section>
+
+<section id="ejercicio-4-comentar-ticket">
+<h2 class="doc-article__h2" id="ejercicio-4-comentar-ticket">Ejercicio 4: Comentar en ticket post-fix</h2>
+
+```bash
+architect run "Usa la tool MCP add_comment para comentar en BUG-001 \
+  que el bug ha sido corregido. Incluye un resumen del fix aplicado." \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+### Cleanup
+
+```bash
+kill $MCP_PID 2>/dev/null
+```
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Concepto | Descripción |
+|----------|-------------|
+| `mcp.servers` | Lista de MCP servers a conectar |
+| `mcp.servers[].url` | Endpoint del MCP server |
+| `mcp.servers[].auth` | Autenticación (none, bearer, basic) |
+| Tools MCP | Aparecen como tools nativas para el agente |
+
+<Callout type="info" title="Siguiente lab">
+Lab 15: OTel Tracing — Traza completa de la ejecución del agente.
+</Callout>
+
+</section>
