@@ -1,0 +1,288 @@
+---
+title: "Técnicas y Patrones de Ejecución"
+description: "Patrones de razonamiento, lógicas de ejecución y manejo de contexto en agentes."
+intro: "Exploración técnica de CoT, ToT, ReAct, uso de guardrails, caching, checkpoints y técnicas avanzadas de razonamiento."
+category: "AGENTIC AI"
+categoryColor: "red"
+icon: "cpu"
+tags: ["Agentic AI", "Agents", "Architecture"]
+breadcrumb: ["Docs", "Agentic AI", "Técnicas y Patrones de Ejecución"]
+order: 17
+toc:
+  - { id: "patrones-de-razonamiento", label: "Patrones de Razonamiento" }
+  - { id: "l-gica-de-ejecuci-n", label: "Lógica de Ejecución" }
+  - { id: "t-cnicas-de-contexto", label: "Técnicas de Contexto" }
+  - { id: "t-cnicas-de-verificaci-n", label: "Técnicas de Verificación" }
+  - { id: "t-cnicas-de-costes-y-eficiencia", label: "Técnicas de Costes y Eficiencia" }
+  - { id: "t-cnicas-emergentes-2025-2026", label: "Técnicas Emergentes 2025-2026" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+*Última actualización: Febrero 2026*
+
+---
+
+<section id="patrones-de-razonamiento">
+<h2 class="doc-article__h2" id="patrones-de-razonamiento">Patrones de Razonamiento</h2>
+
+Los patrones de razonamiento determinan **cómo piensa** el agente: si descompone la tarea, si explora alternativas, si se autocorrige. Tres patrones son fundamentales en la arquitectura moderna de agentes.
+
+### Chain of Thought (CoT)
+
+El modelo razona paso a paso antes de dar una respuesta final. En vez de saltar directamente a la respuesta, "muestra su trabajo".
+
+```
+Pregunta: ¿Cuántas r hay en "strawberry"?
+
+Sin CoT: "Hay 2 r's" (incorrecto)
+
+Con CoT: "Voy a recorrer cada letra:
+s-t-r-a-w-b-e-r-r-y
+Posición 3: r
+Posición 8: r
+Posición 9: r
+Hay 3 r's" (correcto)
+```
+
+Mejora significativamente tareas de matemáticas, lógica, y código. Se activa con frases como "piensa paso a paso" o con modelos que lo hacen nativamente (Extended Thinking).
+
+### Tree of Thoughts (ToT)
+
+Extensión de CoT que explora **múltiples ramas de razonamiento** en paralelo, con lookahead y backtracking. En vez de un solo camino de pensamiento, el modelo considera varios enfoques y elige el más prometedor.
+
+```
+        Problema
+       /    |    \
+    Idea A  Idea B  Idea C
+    /  \      |      \
+  A1   A2    B1     C1
+   ✗    ✓     ✗      ✓    ← evalúa cada rama
+        │                  │
+        ▼                  ▼
+    Best: A2          Backup: C1
+```
+
+Propuesto por Princeton/Google (2023). Mejora tareas de razonamiento complejo donde hay múltiples soluciones posibles.
+
+### ReAct (Reason + Act)
+
+Interleava razonamiento y acción en un loop continuo:
+
+```
+Thought: Necesito encontrar el archivo que define la función processPayment
+Action: search_files("processPayment")
+Observation: Encontrado en src/payments/stripe.py, línea 45
+
+Thought: Ahora necesito leer ese archivo para entender la implementación
+Action: read_file("src/payments/stripe.py")
+Observation: [contenido del archivo]
+
+Thought: El bug está en la línea 52 donde no se maneja el caso de timeout
+Action: edit_file("src/payments/stripe.py", ...)
+```
+
+Es el patrón por defecto de la mayoría de frameworks de agentes. Produce trazas interpretables que se pueden debuggear.
+
+### Reflexion
+
+El agente ejecuta una tarea, evalúa su resultado, genera feedback sobre sí mismo, y reintenta con ese feedback incorporado. Es un loop de auto-mejora:
+
+```
+Attempt 1 → Result → Self-evaluate → "Mi enfoque fue demasiado agresivo,
+                                       debería preservar los tests existentes"
+Attempt 2 (con feedback) → Better Result → Self-evaluate → "Ahora está bien"
+```
+
+A diferencia de ReAct (que razona dentro de cada paso), Reflexion razona *entre* intentos completos.
+
+### LATS (Language Agent Tree Search)
+
+Combina Tree of Thoughts con Monte Carlo Tree Search (MCTS). El agente explora múltiples trayectorias de acción, evalúa cada una, y selecciona la más prometedora usando técnicas de búsqueda en árboles. Es el patrón más sofisticado de razonamiento y el más caro computacionalmente.
+
+---
+</section>
+
+<section id="l-gica-de-ejecuci-n">
+<h2 class="doc-article__h2" id="l-gica-de-ejecuci-n">Lógica de Ejecución</h2>
+
+### Hooks (Lifecycle Hooks)
+
+Funciones que se ejecutan automáticamente en puntos específicos del ciclo de vida del agente. Son **deterministas** (código normal, no LLM) y se usan para añadir comportamiento predecible a un sistema no determinista.
+
+**Puntos de hook comunes:**
+
+| Hook | Cuándo se ejecuta | Ejemplo de uso |
+|------|-------------------|----------------|
+| `pre_session` | Antes de que el agente empiece | Cargar configuración, verificar credenciales |
+| `post_session` | Cuando el agente termina | Guardar report, limpiar archivos temporales |
+| `pre_tool_use` | Antes de ejecutar una herramienta | Validar que el agente puede usar esa tool |
+| `post_tool_use` | Después de ejecutar una herramienta | Auto-format código, lint, logging |
+| `pre_llm_call` | Antes de cada llamada al LLM | Inyectar contexto dinámico, cost tracking |
+| `post_llm_call` | Después de cada respuesta del LLM | Logging, evaluar calidad de respuesta |
+| `on_error` | Cuando ocurre un error | Notificación, rollback, retry |
+
+**Ejemplo concreto:** Un hook `post_tool_use` que ejecuta `ruff format` automáticamente después de cada edición de archivo Python. El agente no tiene que recordar formatear — el hook lo hace determinísticamente.
+
+### Quality Gates
+
+Validaciones obligatorias que deben pasar antes de que el agente pueda completar su tarea. A diferencia de las condiciones de parada del loop, los quality gates verifican la **calidad** del resultado, no solo que el agente haya terminado.
+
+```yaml
+quality_gates:
+  - name: lint
+    command: "ruff check src/"
+    required: true
+  - name: tests
+    command: "pytest tests/ -q"
+    required: true
+  - name: type_check
+    command: "mypy src/"
+    required: false  # warn pero no bloquear
+```
+
+Si el agente dice "he terminado" pero el quality gate falla, el agente **sigue trabajando**. El gate es determinista y no negociable — está fuera del control del LLM.
+
+### Guardrails
+
+Restricciones que limitan qué puede hacer el agente. Son la diferencia entre "lanzar un LLM contra tu repo y rezar" y "ejecutar un agente controlado con audit trail".
+
+**Tipos de guardrails:**
+
+- **Input guardrails**: Validan y filtran el input antes de llegar al LLM (PII detection, prompt injection detection)
+- **Execution guardrails**: Limitan las acciones del agente durante ejecución (archivos protegidos, comandos bloqueados, max archivos modificables)
+- **Output guardrails**: Validan la respuesta del LLM antes de entregarla al usuario (toxicidad, formato correcto, hallucination detection)
+- **Agentic guardrails**: Específicos para sistemas multi-step — limitan herramientas disponibles, capean decisiones autónomas, imponen circuit breakers
+
+**Guardrails deterministas vs LLM-based:**
+- *Deterministas*: Regex, listas blancas/negras, validación de schema. Siempre producen el mismo resultado. Rápidos y fiables.
+- *LLM-based*: Otro modelo evalúa si el output es seguro/correcto. Más flexible pero más lento y no 100% fiable.
+
+La recomendación es usar ambos: deterministas como primera línea, LLM-based como segunda para casos ambiguos.
+
+### Checkpoints
+
+Puntos de restauración que permiten hacer rollback si algo sale mal. En agentes de código, típicamente son commits de Git que se crean antes de que el agente aplique cambios. Si el resultado es malo, puedes volver al checkpoint.
+
+### Graceful Shutdown / Graceful Close
+
+Cómo termina el agente limpiamente cuando recibe una señal de parada (budget agotado, timeout, Ctrl+C). Un buen agente no deja archivos a medias o estados inconsistentes. Guarda progreso, revierte cambios parciales, y genera un report de lo que completó.
+
+---
+</section>
+
+<section id="t-cnicas-de-contexto">
+<h2 class="doc-article__h2" id="t-cnicas-de-contexto">Técnicas de Contexto</h2>
+
+### Context Window Management
+
+El context window del LLM es limitado. Gestionar qué información entra y qué se descarta es crítico para agentes que ejecutan muchas acciones.
+
+**Técnicas:**
+
+- **Summarization**: Resumir interacciones anteriores para reducir tokens
+- **Sliding window**: Mantener solo las N últimas interacciones
+- **Context pruning**: Eliminar tool results antiguos que ya no son relevantes
+- **Hierarchical context**: Resumen de alto nivel + detalles solo de lo reciente
+
+### Context Limpio (Clean Context)
+
+Técnica donde cada iteración del loop del agente empieza con contexto fresco. En vez de acumular toda la conversación (que eventualmente desborda el context window y degrada calidad), cada iteración recibe: la spec original, el diff acumulado, y los errores de la última iteración.
+
+Este patrón es el core del Ralph Loop de Architect. Cada iteración es limpia — sin basura de intentos anteriores.
+
+### Git Diff como Contexto
+
+Usar `git diff` como contexto para el agente. Le da información precisa y compacta sobre qué ha cambiado. Más eficiente que dar archivos completos.
+
+### Skills / Knowledge Files
+
+Archivos de conocimiento que se inyectan en el contexto del agente. Pueden ser específicos del proyecto (.architect.md) o reutilizables entre proyectos (skills). El sistema de skills de Vercel/v0 y Claude Code son ejemplos.
+
+### Prompt Caching
+
+Los proveedores de LLM permiten cachear la parte estática del prompt (system prompt, herramientas, contexto fijo) para que no se re-procese en cada llamada. Reduce latencia y coste significativamente en agentes que hacen muchas llamadas con el mismo system prompt.
+
+---
+</section>
+
+<section id="t-cnicas-de-verificaci-n">
+<h2 class="doc-article__h2" id="t-cnicas-de-verificaci-n">Técnicas de Verificación</h2>
+
+### Self-Evaluation / Self-Eval
+
+El agente evalúa su propio trabajo. Puede ser básico ("¿mi output parece correcto?") o estructurado (ejecutar checks específicos). El problema: un LLM evaluándose a sí mismo tiene blind spots. Es mejor que nada pero no sustituye checks externos.
+
+### LLM-as-a-Judge
+
+Un modelo diferente (o el mismo con un prompt diferente) evalúa el output del agente. Más fiable que self-eval porque el "juez" tiene un contexto y perspectiva diferentes.
+
+Estándar en 2026. Amazon publicó un framework con 20+ métricas distribuidas en 3 capas (respuesta, tarea, tool use).
+
+### External Verification
+
+Verificación por herramientas externas deterministas: compiladores, linters, test suites, scanners de seguridad. Es la forma más fiable de verificación porque no depende de otro LLM.
+
+La filosofía: **determinismo sobre probabilismo**. El LLM decide qué hacer, las herramientas verifican que el resultado es correcto.
+
+### Auto-Review
+
+Después de que el agente termina su trabajo principal, un segundo paso de revisión examina el resultado con contexto limpio. El reviewer no sabe qué intentó el agente — solo ve el diff final y lo evalúa.
+
+### Red Teaming
+
+Probar activamente que los guardrails y protecciones del agente funcionan intentando romperlos. Incluye: prompt injection, data exfiltration vía tools, supply-chain tampering, y en multi-agente, "colusión" entre agentes. MITRE ATLAS proporciona playbooks para agentes de IA.
+
+---
+</section>
+
+<section id="t-cnicas-de-costes-y-eficiencia">
+<h2 class="doc-article__h2" id="t-cnicas-de-costes-y-eficiencia">Técnicas de Costes y Eficiencia</h2>
+
+### Budget / Cost Tracking
+
+Monitorizar y limitar el gasto del agente en tiempo real. Cada llamada al LLM tiene un coste (input tokens × precio + output tokens × precio). Un agente sin budget puede gastar $50 en un loop infinito.
+
+### Token Optimization
+
+Técnicas para reducir tokens consumidos sin perder calidad:
+- Prompts concisos (menos tokens de input)
+- Modelos más pequeños para tareas simples (model routing)
+- Prompt caching para contexto repetido
+- Structured output para respuestas más compactas
+
+### Batch Processing / Batch API
+
+Enviar múltiples tareas al LLM de una vez con delivery asíncrona (horas). Los proveedores ofrecen descuentos del 50% en batch. Útil para evaluaciones masivas, procesamiento de documentos, y tareas que no son urgentes.
+
+### Caching Semántico
+
+Cachear respuestas del LLM basándose en la similitud semántica del prompt (no solo match exacto). Si alguien pregunta algo "suficientemente similar" a una pregunta anterior, devolver la respuesta cacheada.
+
+---
+</section>
+
+<section id="t-cnicas-emergentes-2025-2026">
+<h2 class="doc-article__h2" id="t-cnicas-emergentes-2025-2026">Técnicas Emergentes 2025-2026</h2>
+
+### Elicitation
+
+El agente detecta que necesita más información del usuario y **pide clarificación proactivamente** en vez de asumir o alucinar. El protocolo ACP lo soporta nativamente con estados de pausa.
+
+### Memory Hygiene
+
+Prácticas para gestionar la memoria a largo plazo de los agentes: TTLs (expiración automática), purgas programadas, rotación de snapshots, y restricción de qué se persiste por defecto. Evita que la memoria crezca indefinidamente con información obsoleta o incorrecta.
+
+### Agentic RAG
+
+RAG donde el agente decide dinámicamente: ¿necesito buscar? ¿qué query uso? ¿los resultados son suficientes o busco más? ¿de qué fuente? En vez de un pipeline fijo de retrieval, el agente gestiona activamente su propio acceso a conocimiento.
+
+### Structured Generation / Constrained Decoding
+
+Forzar al LLM a generar output que cumpla un schema JSON exacto. En vez de "pedir educadamente" que devuelva JSON y parsear con esperanza, el decoding del modelo está restringido para producir solo tokens válidos según el schema. Herramientas: Outlines, Instructor, API de structured output de OpenAI/Anthropic.
+
+### Streaming Agentico
+
+Enviar resultados parciales al usuario mientras el agente trabaja. En vez de esperar a que termine todo, el usuario ve progreso en tiempo real: qué herramienta está usando, qué archivo está editando, cuánto presupuesto queda.
+</section>
+

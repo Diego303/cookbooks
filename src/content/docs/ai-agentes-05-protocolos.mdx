@@ -1,0 +1,378 @@
+---
+title: "Protocolos y Herramientas"
+description: "Estándares de comunicación como MCP y A2A, frameworks y ecosistemas."
+intro: "Comparativa de herramientas de desarrollo, protocolos (MCP, A2A, ACP), frameworks de agentes (LangGraph, CrewAI) y bases de datos vectoriales."
+category: "AGENTIC AI"
+categoryColor: "red"
+icon: "link"
+tags: ["Agentic AI", "Agents", "Architecture"]
+breadcrumb: ["Docs", "Agentic AI", "Protocolos y Herramientas"]
+order: 19
+toc:
+  - { id: "protocolos-de-comunicaci-n", label: "Protocolos de Comunicación" }
+  - { id: "frameworks-de-agentes", label: "Frameworks de Agentes" }
+  - { id: "herramientas-de-agentic-coding", label: "Herramientas de Agentic Coding" }
+  - { id: "herramientas-de-guardrails", label: "Herramientas de Guardrails" }
+  - { id: "herramientas-de-evaluaci-n", label: "Herramientas de Evaluación" }
+  - { id: "vector-stores-bases-de-datos-vectoriales", label: "Vector Stores (Bases de Datos Vectoriales)" }
+  - { id: "plataformas-de-deployment", label: "Plataformas de Deployment" }
+  - { id: "est-ndares-relevantes", label: "Estándares Relevantes" }
+  - { id: "glosario-r-pido-a-z", label: "Glosario Rápido A-Z" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+*Última actualización: Febrero 2026*
+
+---
+
+<section id="protocolos-de-comunicaci-n">
+<h2 class="doc-article__h2" id="protocolos-de-comunicaci-n">Protocolos de Comunicación</h2>
+
+### MCP — Model Context Protocol
+
+**Qué es:** Protocolo abierto de Anthropic (noviembre 2024) que estandariza cómo los agentes se conectan a herramientas, datos y sistemas externos. Es la capa **vertical**: conecta al agente con su entorno.
+
+**Analogía:** MCP es como USB para agentes — un estándar universal para "enchufar" herramientas a cualquier agente.
+
+**Arquitectura:**
+
+```
+MCP Host (tu aplicación)
+  └── MCP Client (integrado en el agente)
+        └── MCP Server 1 (GitHub)
+        └── MCP Server 2 (Slack)
+        └── MCP Server 3 (Base de datos)
+```
+
+**Conceptos clave:**
+
+- **MCP Host**: La aplicación que aloja al agente (Claude Desktop, IDE, CLI)
+- **MCP Client**: Componente dentro del host que gestiona la comunicación con servers
+- **MCP Server**: Servicio que expone herramientas, recursos, y prompts. Puede ser local (proceso) o remoto (HTTP)
+- **Tools**: Funciones que el agente puede llamar (read_file, search, create_issue)
+- **Resources**: Datos que el server expone para que el agente lea (archivos, configuraciones)
+- **Prompts**: Templates de prompts que el server sugiere al agente
+
+**Transporte:**
+- **stdio**: Comunicación por stdin/stdout (para servers locales como procesos hijo)
+- **HTTP + SSE**: Para servers remotos (Server-Sent Events para streaming)
+
+**Estado actual (2026):** Adopción masiva. Miles de MCP servers disponibles. Soportado por Claude, Cursor, VS Code (Copilot), y la mayoría de frameworks. La simplicidad fue clave para su adopción — pero funcionalidades avanzadas como auth, memory cross-server, y discovery dinámico aún están en desarrollo.
+
+**Riesgo conocido:** Primer MCP server malicioso descubierto in the wild en septiembre 2025. Supply chain security es un problema activo.
+
+---
+
+### A2A — Agent-to-Agent Protocol
+
+**Qué es:** Protocolo abierto de Google (abril 2025), ahora bajo Linux Foundation. Estandariza cómo los agentes se comunican **entre sí**. Es la capa **horizontal**: conecta agentes con otros agentes.
+
+**Analogía:** Si MCP es USB (agente ↔ herramientas), A2A es HTTP (agente ↔ agente). Un lenguaje común para que agentes de diferentes proveedores colaboren.
+
+**Conceptos clave:**
+
+- **Agent Card**: JSON que describe las capacidades del agente (nombre, descripción, skills, endpoints, autenticación). Es el "curriculum" que otros agentes leen para decidir si este agente les puede ayudar
+- **Client Agent**: El agente que inicia la comunicación y envía tareas
+- **Remote Agent / Service Agent**: El agente que recibe tareas y las ejecuta
+- **Task**: Unidad de trabajo con lifecycle definido (submitted → working → input-required → completed → failed → canceled)
+- **Messages**: Comunicación entre agentes con "parts" tipadas (texto, archivos, datos)
+- **Artifacts**: Resultados persistentes de una tarea (archivos generados, datos procesados)
+
+**Principios de diseño:**
+1. Embrace agentic capabilities (comunicación no estructurada, negociación)
+2. Built on existing standards (HTTP, SSE, JSON-RPC)
+3. Secure by default (auth schemes compatibles con OpenAPI)
+4. Support long-running tasks (horas o días, con feedback en tiempo real)
+5. Modality agnostic (texto, audio, video)
+
+**Partners:** 50+ incluyendo Atlassian, Salesforce, SAP, LangChain, MongoDB, PayPal.
+
+---
+
+### ACP — Agent Communication Protocol
+
+**Qué es:** Protocolo de IBM/BeeAI (marzo 2025), bajo Linux Foundation. Similar a A2A pero optimizado para entornos locales y controlados.
+
+**Diferencias con A2A:**
+- **Memory nativa**: Los agentes pueden compartir memoria entre sí (A2A no)
+- **Pausa/reanudación**: Soporte nativo para long-running tasks con Human-in-the-Loop
+- **Agent discovery offline**: Los agentes se describen en build time, no requieren discovery dinámico
+- **REST-based**: Comunicación más ligera que A2A
+- **Open governance**: Linux Foundation desde el inicio
+
+**Cuándo usar ACP vs A2A:**
+- **A2A**: Cuando necesitas interoperabilidad cross-platform entre agentes de diferentes proveedores en la nube
+- **ACP**: Cuando necesitas comunicación local de baja latencia en entornos controlados (edge, manufacturing)
+
+---
+
+### Relación entre protocolos
+
+```
+MCP:  Agent ←→ Tools/Data     (vertical, un agente con su entorno)
+A2A:  Agent ←→ Agent           (horizontal, cross-platform, cloud)
+ACP:  Agent ←→ Agent           (horizontal, local, low-latency)
+```
+
+Los tres son complementarios:
+- Un agente usa **MCP** para conectarse a sus herramientas
+- Usa **A2A** para colaborar con agentes externos de otros proveedores
+- Usa **ACP** para coordinarse con agentes locales del mismo sistema
+
+---
+</section>
+
+<section id="frameworks-de-agentes">
+<h2 class="doc-article__h2" id="frameworks-de-agentes">Frameworks de Agentes</h2>
+
+### LangChain / LangGraph
+
+**LangChain** es el framework más popular para construir aplicaciones con LLMs. Proporciona abstracciones para chains, prompts, tools, memory, y retrieval.
+
+**LangGraph** (1.0 en octubre 2025) es la evolución para agentes complejos. Modelo de ejecución basado en grafos dirigidos con soporte para ciclos, condicionales, y ejecución paralela. ~400 empresas en producción, ~90M downloads mensuales.
+
+**Cuándo usar:** Cuando necesitas un framework completo con ecosistema rico. Curva de aprendizaje significativa. Puede ser over-engineering para tareas simples.
+
+### CrewAI
+
+Framework para orquestación multi-agente basada en roles. Defines "crews" de agentes con roles (researcher, writer, coder), cada uno con sus herramientas y objetivos.
+
+**Cuándo usar:** Multi-agente con roles claros. Más simple que LangGraph para el caso de uso que resuelve. Limitaciones de escala reportadas después de 6-12 meses en producción.
+
+### AutoGen (Microsoft)
+
+Framework para sistemas multi-agente conversacionales. Popularizó el patrón de "group chat" entre agentes. Recientemente fusionado con Semantic Kernel.
+
+**Cuándo usar:** Sistemas multi-agente con interacciones tipo chat. Bueno para prototipado rápido.
+
+### OpenAI Agents SDK
+
+SDK oficial de OpenAI para construir agentes. Introduce el handoff pattern (traspaso entre agentes) como primitivo de primera clase.
+
+### Google ADK (Agent Development Kit)
+
+Framework de Google para construir agentes con soporte nativo de A2A, MCP, y Vertex AI Agent Engine como runtime managed.
+
+### Amazon Bedrock AgentCore
+
+Plataforma managed framework-agnostic (octubre 2025). Puede ejecutar LangGraph, CrewAI, Google ADK, u OpenAI Agents SDK sobre infraestructura enterprise con policy enforcement determinista.
+
+### LlamaIndex
+
+Framework especializado en RAG y data-aware agents. Más enfocado que LangChain en el aspecto de retrieval y conectores de datos.
+
+### Anthropic: Building Blocks
+
+Anthropic recomienda no usar frameworks complejos y en su lugar construir con LLM APIs directamente. Su guía "Building Effective Agents" propone workflows compositivos simples (prompt chaining, routing, parallelization) antes de saltar a agentes autónomos.
+
+---
+</section>
+
+<section id="herramientas-de-agentic-coding">
+<h2 class="doc-article__h2" id="herramientas-de-agentic-coding">Herramientas de Agentic Coding</h2>
+
+| Herramienta | Tipo | Modelo | Fortaleza |
+|-------------|------|--------|-----------|
+| **Claude Code** | Terminal interactivo | Claude | Best-in-class para coding interactivo |
+| **Cursor** | IDE (VS Code fork) | Multi | La experiencia IDE más completa |
+| **GitHub Copilot** | IDE + Agent mode | Multi | Integración nativa con VS Code y GitHub |
+| **Aider** | Terminal | Multi | Pionero en agentes CLI, open source |
+| **Architect** | Headless / CI | Multi | Diseñado para CI/CD y automatización sin supervisión |
+| **Codex CLI** | Terminal | OpenAI | CLI oficial de OpenAI para coding |
+| **Windsurf (Codeium)** | IDE | Multi | Flujo de "cascade" para coding |
+| **Devin** | Autónomo web | Propio | Agente autónomo completo (controversial en resultados reales) |
+
+### Diferencia clave:
+
+- **IDE agents** (Cursor, Copilot): Tú estás delante, el agente te asiste
+- **Terminal agents** (Claude Code, Aider): Tú supervisas, el agente ejecuta
+- **Headless agents** (Architect): El agente ejecuta solo, tú revisas el resultado
+
+---
+</section>
+
+<section id="herramientas-de-guardrails">
+<h2 class="doc-article__h2" id="herramientas-de-guardrails">Herramientas de Guardrails</h2>
+
+| Herramienta | Proveedor | Especialidad |
+|-------------|-----------|--------------|
+| **NeMo Guardrails** | NVIDIA | Orchestration de múltiples rails, content safety, jailbreak detection. Open source + microservice |
+| **Guardrails AI** | Guardrails AI | Validación de output estructurado (JSON schema), pydantic-based |
+| **LLama Guard** | Meta | Content safety classifier basado en Llama |
+| **AI Guard** | Datadog | Real-time guardrails en producción (prompt injection, PII, tool misuse) |
+| **Galileo Luna-2** | Galileo | Evaluadores sub-200ms para guardrails en tiempo real |
+| **Safiron** | Research | Pre-execution guardrail — evalúa el plan del agente ANTES de ejecutar |
+
+### Tipos de guardrails por momento:
+
+```
+INPUT → [Input Guardrails] → LLM → [Output Guardrails] → User
+                              │
+                     [Execution Guardrails]
+                              │
+                        Tool Calls
+```
+
+1. **Pre-execution**: Evalúan el plan del agente antes de actuar (Safiron)
+2. **In-execution**: Limitan acciones durante ejecución (protected files, blocked commands)
+3. **Post-execution**: Validan el resultado (quality gates, LLM-as-Judge)
+
+---
+</section>
+
+<section id="herramientas-de-evaluaci-n">
+<h2 class="doc-article__h2" id="herramientas-de-evaluaci-n">Herramientas de Evaluación</h2>
+
+### Eval Frameworks
+
+- **Braintrust**: Plataforma de evaluación y logging
+- **Ragas**: Evaluación de RAG (faithfulness, relevance, etc.)
+- **DeepEval**: Open source, 14+ métricas para LLM evaluation
+- **Promptfoo**: CLI para evaluar prompts con test suites
+
+### Amazon 2026 Evaluation Framework
+
+Framework de 3 capas publicado por Amazon:
+
+1. **Response Quality**: Correctness, faithfulness, helpfulness
+2. **Task Completion**: Goal success, accuracy
+3. **Tool Use**: Selection accuracy, parameter accuracy, error rates
+
+20+ métricas específicas. Estándar emergente de referencia para evaluación de agentes.
+
+---
+</section>
+
+<section id="vector-stores-bases-de-datos-vectoriales">
+<h2 class="doc-article__h2" id="vector-stores-bases-de-datos-vectoriales">Vector Stores (Bases de Datos Vectoriales)</h2>
+
+Para almacenar y buscar embeddings en sistemas RAG.
+
+| Base de datos | Tipo | Nota |
+|---------------|------|------|
+| **Pinecone** | Cloud managed | El más popular para producción |
+| **Weaviate** | Open source + cloud | Hybrid search nativo |
+| **Chroma** | Open source | Ligero, developer-friendly, bueno para prototipos |
+| **Qdrant** | Open source + cloud | Rust-based, muy rápido |
+| **Milvus** | Open source | Escalable, CNCF project |
+| **pgvector** | Extensión PostgreSQL | Si ya tienes Postgres, no necesitas otra DB |
+| **LanceDB** | Open source | Serverless, embeddable |
+
+---
+</section>
+
+<section id="plataformas-de-deployment">
+<h2 class="doc-article__h2" id="plataformas-de-deployment">Plataformas de Deployment</h2>
+
+### Vertex AI Agent Engine (Google)
+
+Runtime managed para agentes. Gestiona lifecycle, orquesta tools, y proporciona razonamiento. Soporte nativo de A2A y MCP.
+
+### Amazon Bedrock AgentCore
+
+Plataforma managed framework-agnostic. Ejecuta agentes de cualquier framework con infraestructura enterprise, policy enforcement, y guardrails.
+
+### Azure AI Agent Service
+
+Servicio managed de Microsoft para agentes. Integración profunda con Azure OpenAI y Semantic Kernel.
+
+---
+</section>
+
+<section id="est-ndares-relevantes">
+<h2 class="doc-article__h2" id="est-ndares-relevantes">Estándares Relevantes</h2>
+
+| Estándar | Qué define | Estado |
+|----------|-----------|--------|
+| **OpenTelemetry GenAI** | Semantic conventions para LLM/agent tracing | Estándar de facto |
+| **OpenInference** | Convenciones de tracing para AI/ML (Arize) | Complementario a OTel |
+| **OWASP Top 10 Agentic** | 10 categorías de riesgo para agentes (dic 2025) | Publicado, 100+ contributors |
+| **NIST AI RMF** | Framework de gestión de riesgos de IA | Publicado; Agentic AI Initiative (2026) |
+| **EU AI Act** | Regulación europea de IA | En vigor progresivo 2025-2026 |
+| **ISO/IEC 42001** | Sistema de gestión de IA | Publicado |
+| **MITRE ATLAS** | Framework de amenazas adversariales para AI/ML | Referencia para red teaming |
+| **SLSA** | Supply chain security levels | Para MCP servers y tools |
+| **Sigstore/Cosign** | Verificación de integridad de artefactos | Para firmar MCP servers |
+
+---
+</section>
+
+<section id="glosario-r-pido-a-z">
+<h2 class="doc-article__h2" id="glosario-r-pido-a-z">Glosario Rápido A-Z</h2>
+
+| Término | Definición breve |
+|---------|-----------------|
+| **A2A** | Agent-to-Agent Protocol. Comunicación horizontal entre agentes (Google/Linux Foundation) |
+| **ACP** | Agent Communication Protocol. Comunicación local entre agentes (IBM/BeeAI) |
+| **Agent Card** | JSON que describe capacidades de un agente para discovery (A2A) |
+| **Agent Loop** | Ciclo think→act→observe que ejecuta un agente |
+| **Agentic AI** | IA que actúa autónomamente persiguiendo objetivos |
+| **Auto-review** | Revisión automática del trabajo del agente con contexto limpio |
+| **Batch API** | API para enviar tareas masivas con descuento (~50%) |
+| **Budget** | Límite de gasto (tokens o dinero) por tarea/sesión |
+| **Chain of Thought** | Razonamiento paso a paso del LLM |
+| **Checkpoint** | Punto de restauración (git commit) antes de cambios del agente |
+| **Circuit Breaker** | Patrón que corta ejecución tras fallos repetidos |
+| **Clean Context** | Técnica de resetear contexto entre iteraciones del loop |
+| **Computer Use** | Capacidad del agente de interactuar con interfaces gráficas |
+| **Constitutional AI** | Entrenamiento del LLM con principios/constitución (Anthropic) |
+| **Context Window** | Cantidad máxima de tokens que un LLM puede procesar |
+| **Dry Run** | Ejecución simulada sin aplicar cambios reales |
+| **Elicitation** | El agente pide proactivamente clarificación al usuario |
+| **Embeddings** | Vectores numéricos que representan significado semántico de texto |
+| **Exit Codes** | Códigos de salida semánticos para integración con CI/CD |
+| **Extended Thinking** | Razonamiento largo nativo dentro del modelo antes de responder |
+| **Few-Shot** | Dar ejemplos al LLM del formato/respuesta esperado |
+| **Function Calling** | Capacidad del LLM de invocar funciones externas |
+| **Graceful Shutdown** | Cierre limpio del agente sin dejar estado inconsistente |
+| **Grounding** | Asegurar que respuestas están basadas en datos verificables |
+| **Guardrails** | Restricciones que limitan qué puede hacer el agente |
+| **Hallucination** | LLM genera información falsa con apariencia de factual |
+| **Handoff** | Un agente transfiere control a otro agente especializado |
+| **HITL** | Human-in-the-Loop. Humano aprueba/rechaza acciones del agente |
+| **Hooks** | Funciones que se ejecutan en puntos del lifecycle del agente |
+| **Hybrid Search** | Combinar búsqueda vectorial + keyword para mejor retrieval |
+| **LLM Gateway** | Capa centralizada entre agentes y proveedores de LLM |
+| **LLM-as-a-Judge** | Usar un LLM para evaluar output de otro agente/LLM |
+| **LATS** | Language Agent Tree Search (ToT + MCTS) |
+| **Least Agency** | Principio: dar mínima autonomía necesaria al agente |
+| **MCP** | Model Context Protocol. Conexión agente ↔ herramientas (Anthropic) |
+| **Memory Hygiene** | Prácticas de gestión/limpieza de memoria a largo plazo |
+| **Model Router** | Sistema que enruta cada petición al modelo óptimo |
+| **Multi-Agent** | Sistema con múltiples agentes coordinados |
+| **OpenTelemetry** | Estándar abierto de observabilidad (trazas, métricas, logs) |
+| **Parallel Runs** | Ejecutar misma tarea con N agentes/modelos simultáneamente |
+| **Pipeline** | Secuencia de pasos predefinidos en YAML |
+| **Planning Agent** | Agente que genera plan completo antes de ejecutar |
+| **Prompt Caching** | Cachear parte estática del prompt para reducir coste/latencia |
+| **Prompt Injection** | Ataque: inyectar instrucciones maliciosas en datos que procesa el agente |
+| **Quality Gate** | Validación obligatoria que debe pasar para completar tarea |
+| **RAG** | Retrieval Augmented Generation. Buscar info antes de generar |
+| **Ralph Loop** | Loop fix→test→verify hasta que checks pasen o budget se agote |
+| **ReAct** | Reason + Act. Patrón Thought→Action→Observation |
+| **Reranking** | Paso que reordena resultados de búsqueda por relevancia |
+| **Reflection** | El agente evalúa su propio resultado y ajusta estrategia |
+| **Report** | Artefacto generado por el agente documentando qué hizo |
+| **RLHF** | Reinforcement Learning from Human Feedback |
+| **Sandboxing** | Ejecutar agente en entorno aislado |
+| **Self-Eval** | El agente evalúa su propio trabajo |
+| **Self-Healing** | Patrón: fallo → diagnóstico → fix automático |
+| **Session** | Contexto persistente entre múltiples ejecuciones |
+| **Skills** | Archivos de conocimiento reutilizables para agentes |
+| **SLM** | Small Language Model. Modelo pequeño para tareas específicas |
+| **Structured Output** | Forzar al LLM a generar JSON/XML con schema específico |
+| **Sub-Agent** | Agente secundario delegado por el principal con scope limitado |
+| **Supervisor** | Agente que coordina a otros agentes especializados |
+| **Swarm** | Patrón de group chat entre múltiples agentes |
+| **Temperature** | Parámetro de aleatoriedad del LLM (0=determinista) |
+| **Token** | Unidad mínima de procesamiento de un LLM |
+| **Tool Schema** | Definición formal de una herramienta (nombre, params, descripción) |
+| **Tool Use** | Capacidad del LLM de invocar herramientas externas |
+| **ToT** | Tree of Thoughts. Explorar múltiples ramas de razonamiento |
+| **Trace** | Registro jerárquico de todas las acciones del agente |
+| **Vector Store** | Base de datos para almacenar y buscar embeddings |
+| **Worktree** | Git worktree: copia aislada del repo para ejecución paralela |
+| **Zero-Shot** | Pedir al LLM que responda sin ejemplos previos |
+</section>
+

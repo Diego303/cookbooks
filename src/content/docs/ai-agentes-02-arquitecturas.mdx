@@ -1,0 +1,515 @@
+---
+title: "Sistemas y Arquitecturas"
+description: "Patrones de diseño de agentes, de single-agent a sistemas multi-agente."
+intro: "Taxonomía de arquitecturas: LLM Aumentado, Agente único, flujos compositivos, patrones avanzados y sistemas distribuidos."
+category: "AGENTIC AI"
+categoryColor: "red"
+icon: "network"
+tags: ["Agentic AI", "Agents", "Architecture"]
+breadcrumb: ["Docs", "Agentic AI", "Sistemas y Arquitecturas"]
+order: 16
+toc:
+  - { id: "taxonom-a-de-arquitecturas", label: "Taxonomía de Arquitecturas" }
+  - { id: "1-llm-aumentado-augmented-llm", label: "1. LLM Aumentado (Augmented LLM)" }
+  - { id: "2-agente-nico-single-agent", label: "2. Agente Único (Single Agent)" }
+  - { id: "3-workflows-compositivos", label: "3. Workflows Compositivos" }
+  - { id: "4-patrones-de-agente-avanzados", label: "4. Patrones de Agente Avanzados" }
+  - { id: "5-sistemas-multi-agente", label: "5. Sistemas Multi-Agente" }
+  - { id: "6-sistemas-distribuidos-de-agentes", label: "6. Sistemas Distribuidos de Agentes" }
+  - { id: "7-patrones-de-ejecuci-n-especializados", label: "7. Patrones de Ejecución Especializados" }
+  - { id: "8-patrones-de-orquestaci-n-enterprise", label: "8. Patrones de Orquestación Enterprise" }
+  - { id: "9-anti-patrones-conocidos-2025-2026", label: "9. Anti-patrones conocidos (2025-2026)" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+*Última actualización: Febrero 2026*
+
+---
+
+<section id="taxonom-a-de-arquitecturas">
+<h2 class="doc-article__h2" id="taxonom-a-de-arquitecturas">Taxonomía de Arquitecturas</h2>
+
+Las arquitecturas de agentes se organizan en un espectro de complejidad creciente:
+
+```
+LLM aumentado → Agente único → Workflows compositivos → Multi-agente → Sistemas distribuidos
+```
+
+No siempre más complejo = mejor. Anthropic recomienda empezar simple y añadir complejidad solo cuando sea demostrable que mejora resultados.
+
+---
+</section>
+
+<section id="1-llm-aumentado-augmented-llm">
+<h2 class="doc-article__h2" id="1-llm-aumentado-augmented-llm">1. LLM Aumentado (Augmented LLM)</h2>
+
+El bloque constructivo fundamental. Un LLM al que se le añaden capacidades de herramientas, retrieval, y memoria. No es técnicamente un "agente" (no tiene loop autónomo), pero es la base de todos los agentes.
+
+```
+User → [LLM + Tools + Retrieval + Memory] → Response
+```
+
+**Cuándo usarlo:** Tareas simples que se resuelven en una sola pasada. Si tu caso de uso se puede resolver así, no añadas complejidad.
+
+---
+</section>
+
+<section id="2-agente-nico-single-agent">
+<h2 class="doc-article__h2" id="2-agente-nico-single-agent">2. Agente Único (Single Agent)</h2>
+
+Un LLM aumentado dentro de un **loop de ejecución**. El agente ejecuta un ciclo de razonamiento-acción hasta que decide que ha terminado o una condición externa lo detiene.
+
+### Agent Loop (Bucle del Agente)
+
+El loop fundamental de un agente:
+
+```
+while not done:
+    response = LLM(context + tools)
+    if response.is_tool_call:
+        result = execute_tool(response.tool_call)
+        context.append(result)
+    elif response.is_text:
+        done = True  # o evaluar si realmente terminó
+```
+
+### Stop Conditions (Condiciones de Parada)
+
+Un agente necesita saber cuándo parar. Las condiciones comunes son:
+
+- **LLM decide que terminó**: El modelo genera texto final sin tool calls
+- **Max iterations**: Límite duro de iteraciones del loop
+- **Budget agotado**: Se alcanzó el presupuesto máximo (tokens o dinero)
+- **Timeout**: Tiempo máximo de ejecución
+- **Check externo pasa**: Un test, linter, o validación externa tiene éxito
+- **Human-in-the-loop**: El agente se detiene y espera aprobación humana
+
+### Modos de confirmación
+
+Cómo interactúa el agente con el usuario antes de ejecutar acciones:
+
+- **Interactive / Ask**: Pide confirmación para cada acción
+- **Auto-approve / YOLO**: Ejecuta sin preguntar (para CI/CD y headless)
+- **Suggest / Dry-run**: Muestra qué haría sin ejecutar
+
+---
+</section>
+
+<section id="3-workflows-compositivos">
+<h2 class="doc-article__h2" id="3-workflows-compositivos">3. Workflows Compositivos</h2>
+
+Orquestaciones predefinidas donde LLMs se combinan en flujos controlados. La diferencia con un agente autónomo es que el flujo está definido de antemano — no hay decisión dinámica del LLM sobre qué paso viene después.
+
+### Prompt Chaining (Encadenamiento de Prompts)
+
+Secuencia lineal donde el output de un paso es input del siguiente:
+
+```
+Step 1: Analizar → Step 2: Generar → Step 3: Revisar → Step 4: Formatear
+```
+
+Cada paso puede tener validaciones ("gates") entre ellos. Simple y predecible.
+
+### Routing (Enrutamiento)
+
+Un LLM clasifica el input y lo dirige a la ruta especializada correcta:
+
+```
+Input → [Classifier LLM] → Route A (soporte técnico)
+                          → Route B (ventas)
+                          → Route C (billing)
+```
+
+### Parallelization (Paralelización)
+
+Ejecutar múltiples llamadas LLM simultáneamente. Dos variantes:
+
+- **Sectioning**: Dividir una tarea en subtareas independientes y procesarlas en paralelo
+- **Voting**: Misma tarea ejecutada N veces, resultado por consenso/mayoría
+
+### Orchestrator-Workers
+
+Un LLM orquestador descompone la tarea en subtareas, las asigna a workers especializados, y agrega resultados:
+
+```
+Orchestrator → [Worker 1: Research] + [Worker 2: Code] + [Worker 3: Test]
+             → Aggregate results
+```
+
+### Evaluator-Optimizer
+
+Ciclo donde un LLM genera y otro evalúa, iterando hasta alcanzar calidad:
+
+```
+Generator → Output → Evaluator → Feedback → Generator → Better Output → ...
+```
+
+---
+</section>
+
+<section id="4-patrones-de-agente-avanzados">
+<h2 class="doc-article__h2" id="4-patrones-de-agente-avanzados">4. Patrones de Agente Avanzados</h2>
+
+### ReAct Agent (Reason + Act)
+
+El patrón más fundamental de agente. Interleava **Thought → Action → Observation** en cada paso:
+
+1. **Thought**: El agente razona sobre qué hacer
+2. **Action**: Ejecuta una herramienta
+3. **Observation**: Observa el resultado
+4. Repite hasta completar
+
+Propuesto por Google Research (2022). Es el patrón por defecto de LangChain, LlamaIndex, y la mayoría de frameworks.
+
+### Planning Agent
+
+El agente genera un **plan completo** antes de ejecutar. En vez de improvisar paso a paso (ReAct), primero planifica toda la secuencia de acciones y luego las ejecuta. Útil para tareas multi-step donde el orden importa.
+
+Variante: **Re-planning** — el agente revisa y ajusta el plan después de cada paso basándose en lo observado.
+
+### Reflection Agent (Agente Reflexivo)
+
+Después de cada acción, el agente se autoevalúa: "¿fue correcta mi acción? ¿el resultado es lo esperado? ¿debo cambiar mi estrategia?". Almacena aprendizajes y mejora su enfoque con el tiempo.
+
+### Self-Healing Agent (Agente Auto-reparador)
+
+Patrón donde un fallo no es una señal de stop sino un **trigger para reparación**. El agente detecta el fallo, analiza la causa, aplica un fix, y verifica. Es el patrón core del "Pipeline Doctor" / "Interceptor pattern" en CI/CD.
+
+### Tool-Using Agent
+
+Agente cuya capacidad principal es seleccionar y ejecutar herramientas externas. El LLM actúa como "cerebro" que decide qué herramienta usar y con qué parámetros, pero la ejecución real la hacen las tools.
+
+---
+</section>
+
+<section id="5-sistemas-multi-agente">
+<h2 class="doc-article__h2" id="5-sistemas-multi-agente">5. Sistemas Multi-Agente</h2>
+
+Múltiples agentes trabajando juntos. El mercado ha experimentado un crecimiento explosivo en interés — Gartner reportó un incremento del 1,445% en consultas sobre sistemas multi-agente entre Q1 2024 y Q2 2025.
+
+### Supervisor Pattern (Patrón Supervisor)
+
+Un agente "supervisor" o "manager" coordina a agentes especializados:
+
+```
+        ┌─────────────┐
+        │  Supervisor  │
+        │   Agent      │
+        └──────┬───────┘
+               │
+    ┌──────────┼──────────┐
+    │          │          │
+┌───▼──┐  ┌───▼──┐  ┌───▼──┐
+│Writer │  │Coder │  │Tester│
+│Agent  │  │Agent │  │Agent │
+└───────┘  └──────┘  └──────┘
+```
+
+Es el punto de partida recomendado para multi-agente. Cada agente tiene sus propias herramientas, memoria, y lógica. El supervisor decide quién trabaja en qué.
+
+**Frameworks**: CrewAI, AutoGen, LangGraph.
+
+### Hierarchical Pattern (Patrón Jerárquico)
+
+Extensión del supervisor con múltiples niveles:
+
+```
+          ┌──────────┐
+          │ Director │
+          └─────┬────┘
+        ┌───────┼────────┐
+    ┌───▼──┐        ┌───▼──┐
+    │ Team  │        │ Team  │
+    │Lead A │        │Lead B │
+    └───┬───┘        └───┬───┘
+    ┌───┼───┐        ┌───┼───┐
+    │   │   │        │   │   │
+   W1  W2  W3      W4  W5  W6
+```
+
+Útil para tareas complejas que se dividen en sub-equipos. Similar a cómo funcionan las organizaciones humanas.
+
+### Network Pattern (Patrón Red / Mesh)
+
+Agentes que se comunican directamente entre sí sin jerarquía centralizada:
+
+```
+Agent A ←→ Agent B
+  ↕           ↕
+Agent C ←→ Agent D
+```
+
+Cada agente puede iniciar comunicación con cualquier otro. Más flexible pero más difícil de controlar y debuggear.
+
+### Competitive Pattern (Patrón Competitivo)
+
+Múltiples agentes proponen soluciones al mismo problema, y un evaluador elige la mejor:
+
+```
+         ┌─────────┐
+    ┌───▶│Solution A│
+    │    └─────────┘
+Task│    ┌─────────┐     ┌──────────┐
+────┼───▶│Solution B│────▶│Evaluator │──▶ Best
+    │    └─────────┘     └──────────┘
+    │    ┌─────────┐
+    └───▶│Solution C│
+         └─────────┘
+```
+
+Útil cuando quieres comparar diferentes enfoques o modelos. Es el patrón detrás de "parallel runs" de Architect y evaluaciones competitivas.
+
+### Handoff Pattern (Patrón de Traspaso)
+
+Un agente trabaja hasta que detecta que necesita un especialista, y le transfiere el control:
+
+```
+General Agent → detects need → Handoff → Specialist Agent
+                                       → works on task
+                                       → returns result or control
+```
+
+OpenAI lo popularizó con su Agents SDK. Útil para customer support: el agente general detecta que es un tema de billing y lo transfiere al agente de billing.
+
+### Swarm / Group Chat
+
+Múltiples agentes interactúan en un "chat grupal" donde cada uno contribuye según su especialidad. Un moderador decide quién habla a continuación.
+
+**Framework**: Microsoft AutoGen popularizó este patrón.
+
+---
+</section>
+
+<section id="6-sistemas-distribuidos-de-agentes">
+<h2 class="doc-article__h2" id="6-sistemas-distribuidos-de-agentes">6. Sistemas Distribuidos de Agentes</h2>
+
+Agentes que corren en procesos, máquinas, o incluso organizaciones diferentes, conectados por protocolos de red.
+
+### Arquitectura con MCP (Model Context Protocol)
+
+MCP estandariza cómo un agente se conecta a herramientas y datos externos. Es **vertical**: conecta al agente con su entorno.
+
+```
+┌──────────────────────────────┐
+│         MCP Host             │
+│  ┌─────────────────────┐    │
+│  │    Agent / LLM       │    │
+│  │  (MCP Client)        │    │
+│  └──────────┬───────────┘    │
+│             │ MCP Protocol   │
+│  ┌──────────▼───────────┐    │
+│  │    MCP Servers        │    │
+│  │  ┌─────┐ ┌─────┐    │    │
+│  │  │ Git │ │ DB  │    │    │
+│  │  └─────┘ └─────┘    │    │
+│  │  ┌─────┐ ┌──────┐   │    │
+│  │  │Slack│ │Jira  │   │    │
+│  │  └─────┘ └──────┘   │    │
+│  └──────────────────────┘    │
+└──────────────────────────────┘
+```
+
+**Deployment en producción:** Los MCP servers se despliegan como servicios independientes (Cloud Run, GKE, pods de Kubernetes) y los agentes se conectan como clientes.
+
+### Arquitectura con A2A (Agent-to-Agent Protocol)
+
+A2A estandariza cómo los agentes se comunican **entre sí**. Es **horizontal**: conecta agentes con otros agentes.
+
+```
+┌────────────┐         ┌────────────┐
+│  Client    │  A2A    │  Remote    │
+│  Agent     │◄───────▶│  Agent     │
+│            │ Protocol│            │
+│  (inicia   │         │  (ofrece   │
+│  tareas)   │         │  servicio) │
+└────────────┘         └────────────┘
+```
+
+**Conceptos clave de A2A:**
+
+- **Agent Card**: JSON que describe las capacidades de un agente (como un "curriculum" del agente). Permite discovery dinámico
+- **Task lifecycle**: Estados definidos (submitted → working → input-required → completed → failed)
+- **Messages y Parts**: Los agentes se envían mensajes con partes tipadas (texto, archivos, datos)
+- **Artifacts**: Resultados persistentes de una tarea
+
+### Arquitectura combinada MCP + A2A
+
+El patrón recomendado por Google Cloud para sistemas enterprise:
+
+```
+                    ┌──────────────────────┐
+                    │   Orchestrator Agent  │
+                    │   (Client A2A)       │
+                    └───────┬──────────────┘
+                            │ A2A Protocol
+              ┌─────────────┼─────────────┐
+              │             │             │
+     ┌────────▼──┐   ┌─────▼────┐  ┌────▼───────┐
+     │ Research   │   │ Coding   │  │ Review     │
+     │ Agent      │   │ Agent    │  │ Agent      │
+     │ (Remote)   │   │ (Remote) │  │ (Remote)   │
+     └──────┬─────┘   └────┬─────┘  └─────┬─────┘
+            │ MCP          │ MCP          │ MCP
+     ┌──────▼─────┐  ┌────▼────┐   ┌────▼────┐
+     │ Web Search │  │ GitHub  │   │ Linter  │
+     │ MCP Server │  │ MCP Srv │   │ MCP Srv │
+     └────────────┘  └─────────┘   └─────────┘
+```
+
+**MCP para herramientas, A2A para agentes.** Los agentes se comunican entre sí vía A2A. Cada agente se conecta a sus herramientas vía MCP.
+
+### ACP (Agent Communication Protocol)
+
+Protocolo de IBM/BeeAI, ahora bajo Linux Foundation. Similar a A2A pero optimizado para entornos locales y controlados (edge, manufacturing, latencia crítica).
+
+Diferencias con A2A: ACP tiene memory nativa built-in, soporte de pausa/reanudación para long-running tasks y Human-in-the-Loop, y discovery offline (agentes se describen en build time).
+
+### Deployment en Kubernetes
+
+Patrón de producción para sistemas distribuidos de agentes:
+
+```
+┌─────────────────────────────────────────────┐
+│              Kubernetes Cluster              │
+│                                             │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐ │
+│  │ Pod:      │  │ Pod:      │  │ Pod:      │ │
+│  │ Agent     │  │ MCP Srv   │  │ MCP Srv   │ │
+│  │ Orchestr. │  │ (GitHub)  │  │ (Jira)    │ │
+│  └──────────┘  └──────────┘  └──────────┘ │
+│                                             │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐ │
+│  │ Pod:      │  │ Pod:      │  │ Pod:      │ │
+│  │ Worker    │  │ Worker    │  │ Vector   │ │
+│  │ Agent 1   │  │ Agent 2   │  │ Store    │ │
+│  └──────────┘  └──────────┘  └──────────┘ │
+│                                             │
+│  ┌──────────┐  ┌──────────┐               │
+│  │ Pod:      │  │ Pod:      │               │
+│  │ LLM Gtwy │  │ OTel     │               │
+│  │ (Portkey) │  │ Collector│               │
+│  └──────────┘  └──────────┘               │
+└─────────────────────────────────────────────┘
+```
+
+Cada componente es un servicio independiente que escala horizontalmente. El LLM Gateway centraliza las llamadas a modelos. El OTel Collector centraliza trazas.
+
+---
+</section>
+
+<section id="7-patrones-de-ejecuci-n-especializados">
+<h2 class="doc-article__h2" id="7-patrones-de-ejecuci-n-especializados">7. Patrones de Ejecución Especializados</h2>
+
+### Pipeline / Workflow
+
+Secuencia de pasos definidos en YAML/JSON que el sistema ejecuta en orden. Cada paso puede ser un agente, un comando, o una validación. A diferencia de un agente libre, el flujo está predefinido.
+
+```yaml
+steps:
+  - name: analyze
+    agent: researcher
+    task: "Analiza el problema"
+  - name: implement
+    agent: coder
+    task: "Implementa la solución"
+  - name: test
+    agent: tester
+    task: "Ejecuta y valida tests"
+```
+
+### Ralph Loop / Fix Loop
+
+Loop de reparación iterativa: ejecuta un check externo (test, linter), si falla el agente intenta arreglar, y repite hasta que pase o se agote el presupuesto.
+
+```
+              ┌──────────┐
+              │  Agent    │
+              │  aplica   │
+              │  fix      │
+              └─────┬─────┘
+                    │
+              ┌─────▼─────┐
+              │  Check     │
+              │  externo   │
+              │  (pytest)  │
+              └─────┬─────┘
+                    │
+               ┌────▼────┐
+               │  Pass?   │
+               └──┬───┬───┘
+               No │   │ Sí
+              ┌───▼┐  └───▶ Done ✅
+              │Back│
+              │to  │
+              │fix │
+              └────┘
+```
+
+La clave es que el **check es externo y determinista** — no es el LLM evaluándose a sí mismo. Es pytest, ruff, tsc, o cualquier herramienta que dé un resultado binario (pass/fail).
+
+### Parallel Runs / Competitive Eval
+
+Ejecutar la misma tarea con N agentes/modelos diferentes en paralelo, cada uno en un entorno aislado (git worktree), y comparar resultados. Produce datos objetivos: qué modelo resuelve mejor, más barato, más rápido.
+
+### Dry Run
+
+Simular la ejecución del agente sin aplicar cambios reales. El agente planifica y describe qué haría, pero no ejecuta. Útil para preview y validación antes de lanzar una ejecución real.
+
+### Sub-Agentes / Agent Dispatch
+
+El agente principal delega una subtarea a un agente secundario con contexto aislado y herramientas limitadas. El sub-agente trabaja en un scope reducido y devuelve su resultado al agente principal.
+
+```
+Main Agent → dispatch("review", context=diff) → Sub-Agent (read-only tools)
+           ← ReviewResult
+```
+
+---
+</section>
+
+<section id="8-patrones-de-orquestaci-n-enterprise">
+<h2 class="doc-article__h2" id="8-patrones-de-orquestaci-n-enterprise">8. Patrones de Orquestación Enterprise</h2>
+
+### LLM-as-a-Judge
+
+Un modelo secundario evalúa el output del agente primario. Estándar en 2026 para validación de calidad:
+
+```
+Agent → Output → Judge LLM → Score/Feedback → Accept or Retry
+```
+
+Amazon publicó en 2026 un framework de evaluación con 3 capas y más de 20 métricas: calidad de respuesta, completitud de tarea, y precisión de tool use.
+
+### Tiered Evaluation Architecture
+
+Patrón convergente en la industria para evaluación:
+
+1. **PR gates rápidos**: Checks deterministas en cada pull request
+2. **Regression suites nocturnas**: LLM-as-Judge sobre suite completa
+3. **Monitoring continuo en producción**: Alertas por degradación
+
+### Circuit Breaker Pattern
+
+Inspirado en microservicios: si un agente falla repetidamente, el sistema deja de enviarle tareas temporalmente para evitar cascading failures. Después de un período de espera, prueba con una sola tarea y, si tiene éxito, reabre el circuito.
+
+### Consensus Pattern
+
+Múltiples agentes votan sobre una decisión. Si la mayoría está de acuerdo, se procede. Si no, se escala a un humano o se pide más contexto.
+
+---
+</section>
+
+<section id="9-anti-patrones-conocidos-2025-2026">
+<h2 class="doc-article__h2" id="9-anti-patrones-conocidos-2025-2026">9. Anti-patrones conocidos (2025-2026)</h2>
+
+Gartner advierte que más del 40% de proyectos agenticos serán cancelados para 2027. Anti-patrones comunes:
+
+- **"Set it and forget it"**: Tratar agentes como RPA — lanzar y olvidar. Los agentes necesitan monitoring continuo
+- **Agent without process mapping**: Deployar agentes sin mapear primero el proceso que automatizan
+- **Logging outputs but not reasoning**: Registrar qué hizo el agente pero no *por qué* lo hizo. Sin la cadena de razonamiento, no puedes debuggear
+- **Cascading hallucinations**: En sistemas multi-agente, una alucinación del agente A se amplifica cuando el agente B la toma como input factual
+- **Over-engineering**: Construir un sistema multi-agente jerárquico para algo que un solo agente con un buen prompt resolvería
+- **Premature autonomy**: Dar a los agentes demasiada autonomía demasiado pronto. El principio de "Least Agency" (OWASP 2025) recomienda dar el mínimo de autonomía necesario
+</section>
+
