@@ -1,0 +1,245 @@
+---
+title: "Fundamentos de Agentes de IA"
+description: "Conceptos core, LLMs, memoria, RAG, y modelos clave de agentes."
+intro: "Conoce qué es un agente de IA, cómo se diferencia de un LLM base, cómo usa herramientas y cómo evoluciona en 2026."
+category: "AGENTIC AI"
+categoryColor: "red"
+icon: "brain"
+tags: ["Agentic AI", "Agents", "Architecture"]
+breadcrumb: ["Docs", "Agentic AI", "Fundamentos de Agentes de IA"]
+order: 15
+toc:
+  - { id: "qu-es-un-agente-de-ia", label: "Qué es un Agente de IA" }
+  - { id: "large-language-model-llm", label: "Large Language Model (LLM)" }
+  - { id: "tool-use-function-calling", label: "Tool Use / Function Calling" }
+  - { id: "prompt-engineering", label: "Prompt Engineering" }
+  - { id: "memoria", label: "Memoria" }
+  - { id: "rag-retrieval-augmented-generation", label: "RAG — Retrieval Augmented Generation" }
+  - { id: "alineamiento-y-safety", label: "Alineamiento y Safety" }
+  - { id: "modelos-clave-febrero-2026", label: "Modelos clave (febrero 2026)" }
+  - { id: "conceptos-emergentes-2025-2026", label: "Conceptos emergentes 2025-2026" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+*Última actualización: Febrero 2026*
+
+---
+
+<section id="qu-es-un-agente-de-ia">
+<h2 class="doc-article__h2" id="qu-es-un-agente-de-ia">Qué es un Agente de IA</h2>
+
+Un **agente de IA** es un sistema de software que puede actuar de forma autónoma para lograr un objetivo, tomando decisiones y ejecutando acciones con mínima supervisión humana. A diferencia de un chatbot o un modelo de lenguaje básico que simplemente responde a preguntas, un agente:
+
+- **Percibe** su entorno (lee archivos, recibe datos de APIs, observa resultados)
+- **Razona** sobre la situación (planifica pasos, evalúa alternativas)
+- **Actúa** sobre el entorno (escribe código, llama APIs, modifica archivos)
+- **Observa** el resultado de sus acciones
+- **Itera** refinando su enfoque basándose en los resultados
+
+El loop fundamental de un agente moderno es: `input → think/plan → retrieve/tools → act → observe → evaluate → refine`.
+
+La diferencia clave entre un LLM y un agente es la **agencia**: el usuario define el *qué*, y el agente resuelve el *cómo*.
+
+---
+</section>
+
+<section id="large-language-model-llm">
+<h2 class="doc-article__h2" id="large-language-model-llm">Large Language Model (LLM)</h2>
+
+El "cerebro" del agente. Un modelo de lenguaje entrenado con cantidades masivas de texto que puede generar texto, razonar, planificar y tomar decisiones.
+
+**Conceptos fundamentales del LLM:**
+
+### Token
+
+La unidad mínima de procesamiento de un LLM. No es exactamente una palabra — puede ser una palabra, parte de una palabra, o un carácter especial. Ejemplo: "unhappiness" se tokeniza como `["un", "happiness"]` (2 tokens). En español, palabras largas consumen más tokens que en inglés.
+
+Los tokens importan porque **todo se mide en tokens**: el coste de una llamada API, el tamaño del contexto, los límites de uso.
+
+### Context Window (Ventana de Contexto)
+
+La cantidad máxima de tokens que un LLM puede procesar en una sola llamada. Incluye tanto el input (prompt + historial) como el output (respuesta generada).
+
+- GPT-4.1: 1M tokens
+- Claude Sonnet 4.5: 200K tokens
+- Gemini 2.5 Pro: 1M tokens
+
+Un context window más grande permite al agente "ver" más código, más historial, más documentos a la vez. Pero más contexto = más coste y más latencia.
+
+### System Prompt
+
+Las instrucciones iniciales que definen el comportamiento del LLM. Es la "personalidad" y las "reglas" del agente. El system prompt no cambia entre llamadas del usuario — es la configuración base.
+
+En sistemas agenticos, el system prompt suele incluir: quién es el agente, qué herramientas tiene, qué reglas debe seguir, y cómo debe razonar.
+
+### Temperature
+
+Parámetro que controla la aleatoriedad de las respuestas del LLM (0.0 = determinista, 1.0+ = creativo/aleatorio). Para agentes de código, se usa temperature baja (0.0-0.2) para máxima consistencia. Para agentes creativos, más alta.
+
+### Structured Output
+
+Capacidad del LLM de generar respuestas en formatos estructurados (JSON, XML) en vez de texto libre. Crítico para agentes porque necesitan parsear la respuesta del LLM para decidir qué herramienta llamar y con qué parámetros.
+
+---
+</section>
+
+<section id="tool-use-function-calling">
+<h2 class="doc-article__h2" id="tool-use-function-calling">Tool Use / Function Calling</h2>
+
+La capacidad de un LLM de **decidir llamar a una función o herramienta externa** como parte de su respuesta, en vez de generar solo texto.
+
+### Cómo funciona:
+
+1. El desarrollador define herramientas disponibles con su schema (nombre, descripción, parámetros)
+2. El LLM recibe el prompt del usuario + la lista de herramientas
+3. El LLM decide si necesita una herramienta y genera una "tool call" (JSON con nombre + argumentos)
+4. El sistema ejecuta la herramienta
+5. El resultado se devuelve al LLM como "tool result"
+6. El LLM genera la respuesta final (o decide llamar más herramientas)
+
+Este es el mecanismo fundamental que convierte un LLM en un agente: el LLM ya no solo habla, **actúa**.
+
+### Tool Schema
+
+La definición formal de una herramienta. Incluye nombre, descripción (que el LLM lee para decidir cuándo usarla), y schema JSON de parámetros. Un buen tool schema es la diferencia entre un agente que elige la herramienta correcta y uno que falla.
+
+### Parallel Tool Calls
+
+Cuando el LLM decide llamar múltiples herramientas a la vez en una sola respuesta. Por ejemplo: leer 3 archivos simultáneamente. Más eficiente que llamarlos secuencialmente.
+
+---
+</section>
+
+<section id="prompt-engineering">
+<h2 class="doc-article__h2" id="prompt-engineering">Prompt Engineering</h2>
+
+El arte y ciencia de escribir instrucciones efectivas para LLMs. En el contexto de agentes, va más allá de "hacer buenas preguntas" — incluye diseñar system prompts completos, definir convenciones, y estructurar la información para que el agente tome buenas decisiones.
+
+### Técnicas fundamentales:
+
+- **Few-Shot Prompting**: Dar ejemplos del formato de respuesta esperado
+- **Zero-Shot Prompting**: Pedir al modelo que razone sin ejemplos
+- **Chain of Thought (CoT)**: Pedir al modelo que muestre su razonamiento paso a paso antes de dar la respuesta final. Mejora significativamente la calidad en tareas complejas
+- **System/User/Assistant roles**: Estructura de mensajes donde cada rol tiene un propósito (system = reglas, user = peticiones, assistant = respuestas previas)
+
+### .architect.md / Conventions File
+
+Un archivo de convenciones de proyecto que el agente lee antes de trabajar. Define estilo de código, patrones a seguir, patrones prohibidos, estructura del proyecto. Es prompt engineering a nivel de proyecto — le da contexto persistente al agente sobre *cómo* debe trabajar en tu codebase específico.
+
+---
+</section>
+
+<section id="memoria">
+<h2 class="doc-article__h2" id="memoria">Memoria</h2>
+
+Los LLMs no tienen memoria inherente — cada llamada es independiente. La memoria es un mecanismo externo que persiste información entre interacciones.
+
+### Tipos de memoria (taxonomía 2025):
+
+- **Episódica**: Recuerdos de interacciones pasadas específicas ("la última vez que el usuario pidió X, quiso Y")
+- **Semántica**: Conocimiento general acumulado ("este proyecto usa React 19 con TypeScript")
+- **Procedural**: Aprendizajes sobre cómo hacer las cosas ("cuando los tests de este módulo fallan, suele ser por X")
+
+### Implementaciones comunes:
+
+- **Conversación/Session**: Historial de mensajes de la sesión actual
+- **Short-term memory**: Scratchpad o buffer de trabajo que el agente usa dentro de una tarea
+- **Long-term memory**: Base de datos vectorial o key-value store que persiste entre sesiones
+- **Memory auto-generada**: El agente detecta correcciones del usuario y las persiste automáticamente para futuras sesiones
+
+---
+</section>
+
+<section id="rag-retrieval-augmented-generation">
+<h2 class="doc-article__h2" id="rag-retrieval-augmented-generation">RAG — Retrieval Augmented Generation</h2>
+
+Patrón donde el agente **busca información relevante en fuentes externas** antes de generar su respuesta, en vez de depender solo de su conocimiento de entrenamiento.
+
+### Flujo:
+
+1. Usuario pregunta algo
+2. El sistema busca documentos relevantes (embeddings + búsqueda vectorial)
+3. Los documentos relevantes se inyectan en el context del LLM
+4. El LLM genera respuesta grounded en esos documentos
+
+### Componentes:
+
+- **Embeddings**: Representaciones numéricas (vectores) de texto que capturan significado semántico
+- **Vector Store / Base de datos vectorial**: Base de datos especializada en almacenar y buscar embeddings (Pinecone, Weaviate, Chroma, Qdrant, pgvector, LanceDB)
+- **Chunking**: Dividir documentos largos en fragmentos manejables para indexar
+- **Reranking**: Paso adicional que reordena los resultados de búsqueda por relevancia real (no solo similitud vectorial)
+- **Hybrid Search**: Combinar búsqueda vectorial (semántica) con búsqueda keyword (BM25/TF-IDF) para mejores resultados
+
+### RAG como Tool
+
+Tendencia 2025-2026: tratar RAG como una herramienta más que el agente puede decidir usar o no, en vez de inyectar documentos siempre. El agente decide cuándo necesita buscar información externa.
+
+---
+</section>
+
+<section id="alineamiento-y-safety">
+<h2 class="doc-article__h2" id="alineamiento-y-safety">Alineamiento y Safety</h2>
+
+### Constitutional AI
+
+Técnica de Anthropic donde el LLM se entrena con un conjunto de principios ("constitución") que guían su comportamiento. El modelo aprende a autoevaluarse contra estos principios.
+
+### RLHF — Reinforcement Learning from Human Feedback
+
+Proceso de entrenamiento donde humanos evalúan respuestas del modelo y esas evaluaciones se usan para refinar el modelo. Es lo que hace que los LLMs modernos sean útiles y alineados.
+
+### Grounding
+
+Asegurar que las respuestas del LLM están basadas en datos reales y verificables, no en "alucinaciones" (contenido que suena convincente pero es falso).
+
+### Hallucination (Alucinación)
+
+Cuando el LLM genera información que suena factual pero es inventada. Es el riesgo #1 de los agentes de IA — un agente que alucina puede escribir código que parece correcto pero tiene bugs sutiles, o citar dependencias que no existen.
+
+---
+</section>
+
+<section id="modelos-clave-febrero-2026">
+<h2 class="doc-article__h2" id="modelos-clave-febrero-2026">Modelos clave (febrero 2026)</h2>
+
+| Modelo | Proveedor | Context | Fortalezas |
+|--------|-----------|---------|------------|
+| GPT-4.1 | OpenAI | 1M | Coding, tool use, instruction following |
+| Claude Opus 4.5 | Anthropic | 200K | Razonamiento complejo, extended thinking |
+| Claude Sonnet 4.5 | Anthropic | 200K | Balance precio/rendimiento, coding |
+| Gemini 2.5 Pro | Google | 1M | Context window masivo, multimodal |
+| DeepSeek V3/R1 | DeepSeek | 128K | Coste ultra-bajo, razonamiento |
+| Llama 4 | Meta | Variable | Open source, desplegable on-premise |
+| Mistral Large | Mistral | 128K | Europeo, on-premise, multilingüe |
+| Qwen 2.5 | Alibaba | 128K | Open source, buen rendimiento por coste |
+
+### LLM Router / Model Router
+
+Sistema que enruta automáticamente cada petición al modelo más adecuado basándose en complejidad, coste, y latencia. En vez de usar siempre el modelo más caro, el router decide: "esto es simple → modelo pequeño" vs "esto es complejo → modelo grande". Herramientas: LiteLLM, Portkey, Martian.
+
+---
+</section>
+
+<section id="conceptos-emergentes-2025-2026">
+<h2 class="doc-article__h2" id="conceptos-emergentes-2025-2026">Conceptos emergentes 2025-2026</h2>
+
+### Extended Thinking / Chain of Thought nativo
+
+Modelos como Claude Opus 4.5 y DeepSeek R1 que incluyen razonamiento extenso *dentro del modelo* antes de responder. El modelo "piensa" internamente durante miles de tokens antes de dar su respuesta final. Mejora dramáticamente tareas de razonamiento complejo.
+
+### Agentic Coding
+
+El uso de agentes de IA para escribir, revisar, testear y corregir código de forma autónoma. Es el caso de uso más maduro de agentes en 2026. Herramientas: Claude Code, Cursor, Aider, Architect, Codex CLI, Windsurf.
+
+### Computer Use / Browser Use
+
+Capacidad de agentes para interactuar con interfaces gráficas — mover el ratón, hacer click, escribir en campos de texto, navegar webs. Claude (Anthropic) y Gemini (Google) lideran esta capacidad.
+
+### Coding Agent vs IDE Agent vs Headless Agent
+
+- **IDE Agent** (Cursor, Copilot): Vive dentro del editor, asiste mientras tú programas
+- **Terminal Agent** (Claude Code, Aider): Interactivo en terminal, tú supervisas
+- **Headless Agent** (Architect, scripts custom): Corre sin supervisión en CI/CD, crons, pipelines. Sin interfaz de usuario.
+</section>
+
