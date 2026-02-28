@@ -1,0 +1,248 @@
+---
+title: "Lab 09 — Parallel Runs & Worktrees"
+description: "Procesa N archivos/tareas en paralelo, cada uno en un git worktree aislado."
+intro: "El comando <code>architect parallel</code> toma un manifest y ejecuta la misma tarea en cada archivo, usando workers paralelos en git worktrees aislados para evitar conflictos."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "layers"
+tags: ["Architect", "Parallel", "Worktrees"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 09"]
+order: 29
+toc:
+  - { id: "concepto-clave", label: "Concepto clave" }
+  - { id: "setup", label: "Setup" }
+  - { id: "ejercicio-1-manifest", label: "Ejercicio 1: Crear manifest" }
+  - { id: "ejercicio-2-dry-run", label: "Ejercicio 2: Dry run del parallel" }
+  - { id: "ejercicio-3-parallel-workers", label: "Ejercicio 3: Parallel con 4 workers" }
+  - { id: "ejercicio-4-parallel-tests", label: "Ejercicio 4: Parallel con tests" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="concepto-clave">
+<h2 class="doc-article__h2" id="concepto-clave">Concepto clave</h2>
+
+<Callout type="info" title="Nivel: Intermedio">
+Duración estimada: 30 minutos. Features: `parallel`, `dry-run`, `reports`, `.architect.md`.
+</Callout>
+
+`architect parallel` toma un manifest (lista de archivos/directorios) y ejecuta la misma tarea en cada uno, usando workers paralelos. Cada worker opera en un **git worktree aislado**, evitando conflictos entre ejecuciones.
+
+</section>
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+```bash
+mkdir -p ~/architect-labs/lab-09 && cd ~/architect-labs/lab-09
+git init && mkdir -p src/components
+```
+
+### Crear 8 componentes sin docstrings ni type hints
+
+```bash
+for i in $(seq 1 8); do
+cat > "src/components/component_${i}.py" << PYEOF
+class Component${i}:
+    def __init__(self, name, config):
+        self.name = name
+        self.config = config
+        self.active = False
+
+    def activate(self):
+        self.active = True
+        return self.name
+
+    def process(self, data):
+        if not self.active:
+            return None
+        result = []
+        for item in data:
+            result.append(item * ${i})
+        return result
+
+    def deactivate(self):
+        self.active = False
+
+    def get_status(self):
+        return {"name": self.name, "active": self.active}
+PYEOF
+done
+```
+
+**.architect.md**
+
+```markdown
+# Component Conventions
+
+## Obligatorio
+- Type hints en todos los métodos (parámetros y retorno)
+- Docstrings Google-style en clase y métodos públicos
+- Usar list comprehensions en vez de for loops simples
+- Añadir __repr__ y __str__ a todas las clases
+- Usar typing.Optional para valores que pueden ser None
+```
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+guardrails:
+  max_files_modified: 2
+
+skills:
+  auto_discover: true
+```
+
+```bash
+git add -A && git commit -m "initial: 8 components"
+```
+
+</section>
+
+<section id="ejercicio-1-manifest">
+<h2 class="doc-article__h2" id="ejercicio-1-manifest">Ejercicio 1: Crear manifest</h2>
+
+El manifest es un archivo de texto con la lista de archivos a procesar:
+
+```bash
+find src/components/ -name "*.py" > files-to-process.txt
+cat files-to-process.txt
+# src/components/component_1.py
+# src/components/component_2.py
+# ... (8 archivos)
+```
+
+</section>
+
+<section id="ejercicio-2-dry-run">
+<h2 class="doc-article__h2" id="ejercicio-2-dry-run">Ejercicio 2: Dry run del parallel</h2>
+
+```bash
+architect parallel "Refactoriza este componente para seguir las \
+  convenciones de .architect.md: añade type hints, docstrings, \
+  list comprehensions, y __repr__/__str__." \
+  --manifest files-to-process.txt \
+  --workers 1 \
+  --dry-run
+```
+
+<Callout type="tip" title="Consejo">
+Siempre haz un dry-run antes de ejecutar un parallel masivo. Con `--workers 1` validas que la tarea funciona con un solo archivo antes de escalar.
+</Callout>
+
+</section>
+
+<section id="ejercicio-3-parallel-workers">
+<h2 class="doc-article__h2" id="ejercicio-3-parallel-workers">Ejercicio 3: Ejecutar parallel con 4 workers</h2>
+
+```bash
+architect parallel "Refactoriza este componente para seguir las \
+  convenciones de .architect.md: añade type hints, docstrings, \
+  list comprehensions, y __repr__/__str__." \
+  --manifest files-to-process.txt \
+  --workers 4 \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --report-file reports/parallel-run.json
+```
+
+**Qué observar:**
+
+- 4 workers procesan los 8 archivos (2 archivos por worker)
+- Cada worker trabaja en un **git worktree aislado**
+- Los cambios se agregan al final
+- El reporte muestra resultado por archivo
+
+```bash
+# Verificar resultado
+for f in src/components/component_*.py; do
+    echo "=== $f ==="
+    grep -c "def " "$f"
+    grep -c '"""' "$f"
+    grep -c "->" "$f"
+done
+
+# Ver reporte
+cat reports/parallel-run.json | python -m json.tool
+```
+
+</section>
+
+<section id="ejercicio-4-parallel-tests">
+<h2 class="doc-article__h2" id="ejercicio-4-parallel-tests">Ejercicio 4: Parallel con tests por componente</h2>
+
+Primero crea tests para cada componente:
+
+```bash
+mkdir -p tests/components
+for i in $(seq 1 8); do
+cat > "tests/components/test_component_${i}.py" << PYEOF
+from src.components.component_${i} import Component${i}
+
+def test_init():
+    c = Component${i}("test", {})
+    assert c.name == "test"
+    assert c.active == False
+
+def test_activate():
+    c = Component${i}("test", {})
+    c.activate()
+    assert c.active == True
+
+def test_process_active():
+    c = Component${i}("test", {})
+    c.activate()
+    result = c.process([1, 2, 3])
+    assert result == [${i}, $((i*2)), $((i*3))]
+
+def test_process_inactive():
+    c = Component${i}("test", {})
+    result = c.process([1, 2, 3])
+    assert result is None
+PYEOF
+done
+git add -A && git commit -m "add tests"
+```
+
+Ahora parallel con verificación:
+
+```bash
+architect parallel "Refactoriza este componente: type hints, docstrings, \
+  list comprehensions. IMPORTANTE: Los tests existentes deben seguir pasando." \
+  --manifest files-to-process.txt \
+  --workers 4 \
+  --config .architect.yaml \
+  --confirm-mode yolo
+
+# Verificar que TODOS los tests pasan
+export PYTHONPATH=.
+pytest tests/ -v
+```
+
+<Callout type="warning" title="Importante">
+Cuando usas parallel con tests, asegúrate de que los tests cubren el comportamiento que quieres preservar. Architect refactorizará el código pero mantendrá la compatibilidad con los tests existentes.
+</Callout>
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Flag | Descripción |
+|------|-------------|
+| `architect parallel` | Ejecuta tarea en paralelo por archivo |
+| `--manifest FILE` | Archivo con lista de archivos/dirs a procesar |
+| `--workers N` | Número de workers paralelos |
+| Worktrees | Cada worker opera en un git worktree aislado |
+
+<Callout type="info" title="Siguiente lab">
+Lab 10: Budget & Cost Control — Controla el gasto de cada ejecución.
+</Callout>
+
+</section>

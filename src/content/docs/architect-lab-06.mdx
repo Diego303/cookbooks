@@ -1,0 +1,133 @@
+---
+title: "Lab 06 — Dry Run & Preview"
+description: "Como terraform plan pero para código: previsualiza lo que Architect haría sin ejecutar cambios."
+intro: "Usa el modo dry-run para analizar y planificar cambios sin ejecutar ninguna escritura. Ideal como fase de revisión previa o pre-check en CI."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "eye"
+tags: ["Architect", "Dry Run", "Preview"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 06"]
+order: 26
+toc:
+  - { id: "setup", label: "Setup" }
+  - { id: "ejercicio-1-dry-run-basico", label: "Ejercicio 1: Dry run básico" }
+  - { id: "ejercicio-2-dry-run-revision", label: "Ejercicio 2: Dry run como revisión" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+<Callout type="info" title="Nivel: Básico">
+Duración estimada: 10 minutos. Feature principal: `--dry-run`.
+</Callout>
+
+```bash
+mkdir -p ~/architect-labs/lab-06 && cd ~/architect-labs/lab-06
+git init && mkdir -p src
+```
+
+**src/api.py**
+
+```python
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
+
+@app.route("/users")
+def get_users():
+    return jsonify([{"id": 1, "name": "Alice"}])
+```
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+```
+
+```bash
+git add -A && git commit -m "initial"
+```
+
+</section>
+
+<section id="ejercicio-1-dry-run-basico">
+<h2 class="doc-article__h2" id="ejercicio-1-dry-run-basico">Ejercicio 1: Dry run básico</h2>
+
+```bash
+architect run "Añade endpoints CRUD completos para users: \
+  GET /users/:id, POST /users, PUT /users/:id, DELETE /users/:id. \
+  Añade validación de input y manejo de errores." \
+  --config .architect.yaml \
+  --dry-run
+```
+
+**Qué observar:**
+
+- Architect analiza los archivos, planifica los cambios, pero **NO escribe nada**
+- Muestra un plan de ejecución: qué archivos tocaría, qué funciones añadiría
+- Ningún archivo se modifica
+
+```bash
+# Verificar que nada cambió
+git status
+# -> nothing to commit, working tree clean
+```
+
+<Callout type="tip" title="Consejo">
+El dry-run es equivalente a `terraform plan`: te permite ver el impacto de los cambios antes de aplicarlos. Úsalo siempre antes de tareas grandes o en entornos sensibles.
+</Callout>
+
+</section>
+
+<section id="ejercicio-2-dry-run-revision">
+<h2 class="doc-article__h2" id="ejercicio-2-dry-run-revision">Ejercicio 2: Dry run como fase de revisión</h2>
+
+Usa dry-run para evaluar antes de ejecutar:
+
+```bash
+# Paso 1: Preview
+architect run "Refactoriza src/api.py separando rutas en blueprints \
+  y creando modelos con SQLAlchemy" \
+  --config .architect.yaml \
+  --dry-run \
+  --report-file preview.json
+
+# Paso 2: Revisar el plan
+cat preview.json | python -m json.tool
+
+# Paso 3: Si te gusta, ejecutar de verdad
+architect run "Refactoriza src/api.py separando rutas en blueprints \
+  y creando modelos con SQLAlchemy" \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+<Callout type="warning" title="Importante">
+El patrón dry-run → revisar → ejecutar es especialmente útil en CI/CD. El reporte JSON del dry-run puede ser analizado programáticamente para decidir si se aprueba la ejecución real.
+</Callout>
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Concepto | Descripción |
+|----------|-------------|
+| `--dry-run` | Planifica sin ejecutar escrituras |
+| Uso típico | Pre-check antes de lanzar en CI, o review de impacto |
+
+<Callout type="info" title="Siguiente lab">
+Lab 07: Ralph Loop — El corazón de la automatización autónoma: fix → test → verify.
+</Callout>
+
+</section>

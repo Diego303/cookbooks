@@ -1,0 +1,321 @@
+---
+title: "Lab 18 — Security Remediation Pipeline"
+description: "Scanner detecta CVEs, pipeline de 4 pasos: analyze → fix → verify → document."
+intro: "Pipeline de remediación de seguridad completo: un scanner (semgrep) detecta vulnerabilidades, y Architect ejecuta un pipeline de 4 pasos para analizarlas, corregirlas, verificar los fixes y documentar los cambios."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "shield-alert"
+tags: ["Architect", "Security", "Pipeline"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 18"]
+order: 38
+toc:
+  - { id: "setup", label: "Setup" }
+  - { id: "paso-1-pipeline-remediacion", label: "Paso 1: Pipeline de remediación" }
+  - { id: "paso-2-ejecutar", label: "Paso 2: Ejecutar el pipeline" }
+  - { id: "paso-3-verificar", label: "Paso 3: Verificar resultado" }
+  - { id: "paso-4-crear-pr", label: "Paso 4: Crear PR de seguridad" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+<Callout type="info" title="Nivel: Full-Stack">
+Duración estimada: 45 minutos. Features: `pipeline`, `loop`, `guardrails`, `reports`, `code_rules`, `hooks`.
+</Callout>
+
+```bash
+mkdir -p ~/architect-labs/lab-18 && cd ~/architect-labs/lab-18
+git init && mkdir -p src tests pipelines reports
+pip install semgrep --break-system-packages 2>/dev/null || pip install semgrep
+```
+
+### Crear código con vulnerabilidades intencionadas
+
+**src/user_api.py**
+
+```python
+import sqlite3
+import pickle
+import os
+import subprocess
+
+DB_PATH = "users.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS users "
+        "(id INTEGER PRIMARY KEY, name TEXT, email TEXT, password TEXT)"
+    )
+    conn.close()
+
+def get_user(user_id):
+    # VULN: SQL Injection
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.execute(f"SELECT * FROM users WHERE id = {'{user_id}'}")
+    user = cursor.fetchone()
+    conn.close()
+    return user
+
+def search_users(query):
+    # VULN: SQL Injection
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.execute(
+        f"SELECT * FROM users WHERE name LIKE '%{'{query}'}%'"
+    )
+    users = cursor.fetchall()
+    conn.close()
+    return users
+
+def create_user(name, email, password):
+    # VULN: Plaintext password storage
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        f"INSERT INTO users (name, email, password) "
+        f"VALUES ('{'{name}'}', '{'{email}'}', '{'{password}'}')"
+    )
+    conn.commit()
+    conn.close()
+
+def export_users(filepath):
+    conn = sqlite3.connect(DB_PATH)
+    users = conn.execute("SELECT * FROM users").fetchall()
+    conn.close()
+    # VULN: Pickle serialization
+    with open(filepath, 'wb') as f:
+        pickle.dump(users, f)
+
+def import_users(filepath):
+    # VULN: Pickle deserialization (arbitrary code execution)
+    with open(filepath, 'rb') as f:
+        return pickle.load(f)
+
+def run_backup(backup_path):
+    # VULN: Command injection
+    os.system(f"cp {'{DB_PATH}'} {'{backup_path}'}")
+
+def run_migration(script_path):
+    # VULN: Subprocess with shell=True
+    subprocess.call(f"python {'{script_path}'}", shell=True)
+```
+
+<Callout type="danger" title="Peligro">
+Este código contiene vulnerabilidades intencionadas para el ejercicio: SQL injection, pickle inseguro, command injection, plaintext passwords. Nunca uses estos patrones en código real.
+</Callout>
+
+**tests/test_user_api.py**
+
+```python
+import os, pytest
+from src.user_api import init_db, get_user, create_user, search_users
+
+@pytest.fixture(autouse=True)
+def setup_db(tmp_path, monkeypatch):
+    db = str(tmp_path / "test.db")
+    monkeypatch.setattr("src.user_api.DB_PATH", db)
+    init_db()
+    yield
+    if os.path.exists(db):
+        os.unlink(db)
+
+def test_create_and_get():
+    create_user("Alice", "alice@test.com", "secret123")
+    user = get_user(1)
+    assert user is not None
+    assert user[1] == "Alice"
+
+def test_search():
+    create_user("Bob", "bob@test.com", "pass")
+    results = search_users("Bob")
+    assert len(results) >= 1
+```
+
+```bash
+git add -A && git commit -m "initial: vulnerable code"
+```
+
+### Ejecutar scan de seguridad
+
+```bash
+# Generar findings con semgrep
+semgrep --json -o findings.json \
+  --config "p/python" \
+  --config "p/owasp-top-ten" \
+  src/ 2>/dev/null || echo '{"results":[]}' > findings.json
+
+echo "Findings encontrados:"
+python3 -c "
+import json
+r = json.load(open('findings.json'))
+print(len(r.get('results', [])))
+"
+```
+
+### Configuración
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+guardrails:
+  protected_files:
+    - "*.env*"
+    - "*.pem"
+    - "*.key"
+    - "migrations/**"
+    - ".github/**"
+    - "tests/**"
+  max_files_modified: 10
+  code_rules:
+    - pattern: 'eval\('
+      severity: block
+    - pattern: 'exec\('
+      severity: block
+    - pattern: 'pickle\.loads?\('
+      message: "Pickle es inseguro — usa json"
+      severity: block
+    - pattern: 'subprocess\.call\('
+      message: "Usa subprocess.run con check=True y sin shell=True"
+      severity: block
+  blocked_commands:
+    - "rm -rf"
+    - "curl | sh"
+
+costs:
+  budget_usd: 2.00
+```
+
+</section>
+
+<section id="paso-1-pipeline-remediacion">
+<h2 class="doc-article__h2" id="paso-1-pipeline-remediacion">Paso 1: Crear el pipeline de remediación</h2>
+
+**pipelines/security-remediation.yaml**
+
+```yaml
+name: security-fix
+steps:
+  - name: analyze
+    agent: build
+    task: >
+      Lee el archivo findings.json con los hallazgos de seguridad de semgrep.
+      Prioriza: CRITICAL > HIGH > MEDIUM. Ignora LOW e INFO.
+      Crea REMEDIATION_PLAN.md con:
+      - Cada vulnerabilidad (ID, severidad, archivo, línea)
+      - Fix propuesto para cada una
+      - Orden de aplicación
+      No modifiques código — solo genera el plan.
+    checkpoint: true
+
+  - name: fix
+    agent: build
+    task: >
+      Ejecuta el plan de REMEDIATION_PLAN.md en src/user_api.py.
+      Corrige cada vulnerabilidad:
+      - SQL Injection: usa parámetros con ?
+      - Plaintext passwords: usa hashlib.pbkdf2_hmac
+      - Pickle: reemplaza con json
+      - Command injection: usa subprocess.run sin shell
+      - os.system: reemplaza con subprocess.run
+      No cambies la API pública (mismas funciones, mismos params).
+      Ejecuta los tests después de cada fix.
+    checkpoint: true
+
+  - name: verify
+    agent: build
+    task: >
+      Ejecuta semgrep con las mismas reglas del scan original:
+      semgrep --json --config "p/python" --config "p/owasp-top-ten" src/
+      Verifica que los findings CRITICAL y HIGH están resueltos.
+      Documenta en VERIFY_RESULTS.md qué se resolvió y qué queda.
+    checkpoint: true
+
+  - name: document
+    agent: build
+    task: >
+      Crea SECURITY_CHANGELOG.md con:
+      - Vulnerabilidades corregidas (tipo, severidad, fix)
+      - Vulnerabilidades pendientes (justificación)
+      - Tests ejecutados y resultado
+      - Fecha y versión de reglas semgrep usadas
+```
+
+</section>
+
+<section id="paso-2-ejecutar">
+<h2 class="doc-article__h2" id="paso-2-ejecutar">Paso 2: Ejecutar el pipeline</h2>
+
+```bash
+architect pipeline pipelines/security-remediation.yaml \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --budget 2.00 \
+  --report-file reports/security-pipeline.json
+```
+
+</section>
+
+<section id="paso-3-verificar">
+<h2 class="doc-article__h2" id="paso-3-verificar">Paso 3: Verificar resultado</h2>
+
+```bash
+# Tests siguen pasando
+export PYTHONPATH=.
+pytest tests/ -v
+
+# Vulnerabilidades corregidas
+cat SECURITY_CHANGELOG.md
+
+# Re-scan
+semgrep --json --config "p/python" --config "p/owasp-top-ten" src/ 2>/dev/null | \
+  python3 -c "
+import json, sys
+r = json.load(sys.stdin)
+print(f'Findings restantes: {len(r.get(\"results\", []))}')
+"
+
+# Ver cambios
+git diff src/user_api.py
+
+# Verificar que no usa pickle
+grep -n "pickle" src/user_api.py || echo "OK: sin pickle"
+
+# Verificar SQL parametrizado
+grep -n "?" src/user_api.py
+```
+
+</section>
+
+<section id="paso-4-crear-pr">
+<h2 class="doc-article__h2" id="paso-4-crear-pr">Paso 4: Crear PR de seguridad</h2>
+
+```bash
+git checkout -b security/auto-remediation
+git add -A
+git commit -m "fix(security): automated vulnerability remediation"
+```
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Step | Agente | Acción |
+|------|--------|--------|
+| analyze | build | Lee findings, prioriza, genera plan |
+| fix | build | Aplica fixes siguiendo el plan |
+| verify | build | Re-scan para confirmar fixes |
+| document | build | Genera changelog para compliance |
+
+<Callout type="info" title="Siguiente lab">
+Lab 19: Codebase Migration Factory — Migración masiva de módulos legacy en paralelo.
+</Callout>
+
+</section>

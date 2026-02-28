@@ -1,0 +1,224 @@
+---
+title: "Lab 12 — Code Rules Deep Dive"
+description: "Patrones regex que Architect verifica en cada escritura: block impide, warn permite pero avisa."
+intro: "Configura reglas de código con patrones regex que Architect evalúa en cada escritura. Las reglas con severity <code>block</code> impiden la escritura, mientras que <code>warn</code> permite pero envía feedback al agente."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "scale"
+tags: ["Architect", "Code Rules", "Guardrails"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 12"]
+order: 32
+toc:
+  - { id: "setup", label: "Setup" }
+  - { id: "ejercicio-1-configurar-rules", label: "Ejercicio 1: Configurar code_rules" }
+  - { id: "ejercicio-2-bloqueo", label: "Ejercicio 2: Regla de bloqueo" }
+  - { id: "ejercicio-3-warning", label: "Ejercicio 3: Regla de warning" }
+  - { id: "ejercicio-4-por-lenguaje", label: "Ejercicio 4: Rules por lenguaje" }
+  - { id: "ejercicio-5-combinar-hooks", label: "Ejercicio 5: Combinar con hooks" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+<Callout type="info" title="Nivel: Intermedio">
+Duración estimada: 20 minutos. Features: `code_rules`, `guardrails`.
+</Callout>
+
+```bash
+mkdir -p ~/architect-labs/lab-12 && cd ~/architect-labs/lab-12
+git init && mkdir -p src tests
+```
+
+**src/service.py**
+
+```python
+class UserService:
+    def get_user(self, user_id):
+        return {"id": user_id, "name": "Test"}
+```
+
+```bash
+git add -A && git commit -m "initial"
+```
+
+</section>
+
+<section id="ejercicio-1-configurar-rules">
+<h2 class="doc-article__h2" id="ejercicio-1-configurar-rules">Ejercicio 1: Configurar code_rules</h2>
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+guardrails:
+  code_rules:
+    # BLOCK: impide la escritura completamente
+    - pattern: 'eval\('
+      message: "eval() prohibido — usa ast.literal_eval o json.loads"
+      severity: block
+
+    - pattern: 'exec\('
+      message: "exec() prohibido — riesgo de inyección de código"
+      severity: block
+
+    - pattern: 'import pickle'
+      message: "pickle prohibido — usa json para serialización"
+      severity: block
+
+    - pattern: '__import__\('
+      message: "Dynamic imports prohibidos"
+      severity: block
+
+    - pattern: 'subprocess\.call\('
+      message: "Usa subprocess.run con check=True"
+      severity: block
+
+    # WARN: permite la escritura pero avisa al agente
+    - pattern: '# ?(TODO|FIXME|HACK|XXX)\b'
+      message: "No dejar TODOs — resuelve el problema ahora"
+      severity: warn
+
+    - pattern: 'print\('
+      message: "Usa logging o structlog en vez de print()"
+      severity: warn
+
+    - pattern: 'from .* import \*'
+      message: "No wildcard imports — importa explícitamente"
+      severity: warn
+
+    - pattern: 'except\s*:'
+      message: "No bare except — especifica la excepción"
+      severity: warn
+
+    - pattern: 'type:\s*ignore'
+      message: "No ignorar errores de tipo — corrígelos"
+      severity: warn
+```
+
+<Callout type="tip" title="Consejo">
+Las reglas `block` son como guardrails duros — impiden que Architect escriba código prohibido. Las reglas `warn` son feedback suave que guía al LLM a autocorregirse.
+</Callout>
+
+</section>
+
+<section id="ejercicio-2-bloqueo">
+<h2 class="doc-article__h2" id="ejercicio-2-bloqueo">Ejercicio 2: Probar regla de bloqueo (block)</h2>
+
+```bash
+architect run "Crea src/calculator.py con una función calculate(expression) \
+  que tome un string como '2 + 3 * 4' y devuelva el resultado. \
+  Usa eval() para evaluar la expresión." \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+**Resultado esperado:** Architect no puede usar `eval()` (bloqueado). Debe encontrar una alternativa (como `ast.literal_eval` o parser manual).
+
+Verifica:
+
+```bash
+grep -n "eval(" src/calculator.py || echo "OK: eval no presente"
+```
+
+</section>
+
+<section id="ejercicio-3-warning">
+<h2 class="doc-article__h2" id="ejercicio-3-warning">Ejercicio 3: Probar regla de warning (warn)</h2>
+
+```bash
+architect run "Añade logging a src/service.py. Añade prints para \
+  debugging en cada método." \
+  --config .architect.yaml \
+  --confirm-mode yolo -v
+```
+
+**Qué observar en verbose:** Los warnings aparecen en el output, y el LLM los recibe como contexto para autocorregirse.
+
+<Callout type="warning" title="Importante">
+Los warnings no bloquean la escritura — el archivo se guarda. Pero el agente recibe el mensaje de warning como feedback, lo que le permite corregirse en la siguiente iteración.
+</Callout>
+
+</section>
+
+<section id="ejercicio-4-por-lenguaje">
+<h2 class="doc-article__h2" id="ejercicio-4-por-lenguaje">Ejercicio 4: Code rules por lenguaje</h2>
+
+Extiende las reglas para JavaScript:
+
+```yaml
+guardrails:
+  code_rules:
+    # Python
+    - pattern: 'eval\('
+      message: "eval() prohibido"
+      severity: block
+
+    # JavaScript/TypeScript
+    - pattern: 'dangerouslySetInnerHTML'
+      message: "XSS risk — usa sanitización"
+      severity: block
+
+    - pattern: 'innerHTML\s*='
+      message: "XSS risk — usa textContent"
+      severity: block
+
+    - pattern: 'document\.write\('
+      message: "document.write prohibido"
+      severity: block
+
+    - pattern: 'var\s+'
+      message: "Usa let o const en vez de var"
+      severity: warn
+```
+
+</section>
+
+<section id="ejercicio-5-combinar-hooks">
+<h2 class="doc-article__h2" id="ejercicio-5-combinar-hooks">Ejercicio 5: Combinar code_rules con hooks</h2>
+
+Las code_rules verifican patrones estáticos. Los hooks pueden ejecutar herramientas externas para validación más compleja:
+
+```yaml
+guardrails:
+  code_rules:
+    - pattern: 'print\('
+      message: "Usa structlog"
+      severity: warn
+
+hooks:
+  post_tool_use:
+    - name: check-code-rules
+      matcher: "write_file|edit_file"
+      file_patterns: ["*.py"]
+      command: "ruff check $ARCHITECT_FILE_PATH --select E,W --no-fix 2>/dev/null || true"
+      timeout: 10
+```
+
+<Callout type="tip" title="Consejo">
+Combina code_rules (patrones simples) con hooks (herramientas externas como ruff, eslint, semgrep) para una validación completa en cada escritura.
+</Callout>
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Severity | Comportamiento |
+|----------|---------------|
+| `block` | Impide la escritura del archivo completamente |
+| `warn` | Permite la escritura pero envía warning al agente |
+| `pattern` | Regex que se evalúa contra el contenido del archivo |
+| `message` | Mensaje que recibe el agente explicando el problema |
+
+<Callout type="info" title="Siguiente lab">
+Lab 13: Sub-Agents & Writer/Reviewer — Patrones multi-agente.
+</Callout>
+
+</section>

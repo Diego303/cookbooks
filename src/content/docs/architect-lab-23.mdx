@@ -1,0 +1,272 @@
+---
+title: "Lab 23 — Monorepo Dependency Updater"
+description: "Actualización de dependencias en 6 paquetes de un monorepo con parallel workers y Ralph Loop."
+intro: "Migración masiva de Pydantic v1 a v2 en un monorepo con 6 paquetes. Parallel workers procesan cada paquete en worktrees aislados, con Ralph Loop para asegurar que los tests pasan."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "package"
+tags: ["Architect", "Monorepo", "Dependencies"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 23"]
+order: 43
+toc:
+  - { id: "setup", label: "Setup" }
+  - { id: "paso-1-instalar-v2", label: "Paso 1: Instalar pydantic v2" }
+  - { id: "paso-2-verificar-fallos", label: "Paso 2: Verificar que tests fallan" }
+  - { id: "paso-3-manifest", label: "Paso 3: Crear manifest" }
+  - { id: "paso-4-migracion", label: "Paso 4: Parallel migration" }
+  - { id: "paso-5-verificar", label: "Paso 5: Verificar" }
+  - { id: "paso-6-crear-pr", label: "Paso 6: Crear PR" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+<Callout type="info" title="Nivel: Full-Stack">
+Duración estimada: 40 minutos. Features: `parallel`, `loop`, `guardrails`, `reports`, `.architect.md`.
+</Callout>
+
+```bash
+mkdir -p ~/architect-labs/lab-23 && cd ~/architect-labs/lab-23
+git init && mkdir -p reports
+```
+
+### Crear monorepo simulado con 6 paquetes Python
+
+```bash
+for pkg in core api auth storage utils worker; do
+    mkdir -p "packages/${pkg}/src" "packages/${pkg}/tests"
+
+    # requirements.txt con versiones viejas
+    cat > "packages/${pkg}/requirements.txt" << REQEOF
+requests==2.28.0
+pydantic==1.10.0
+structlog==22.1.0
+REQEOF
+
+    # Código que usa la API vieja de pydantic v1
+    cat > "packages/${pkg}/src/models.py" << PYEOF
+from pydantic import BaseModel, validator
+
+class ${pkg^}Config(BaseModel):
+    name: str
+    enabled: bool = True
+    max_retries: int = 3
+
+    @validator("name")
+    def name_not_empty(cls, v):
+        if not v.strip():
+            raise ValueError("name cannot be empty")
+        return v
+
+    @validator("max_retries")
+    def retries_positive(cls, v):
+        if v < 0:
+            raise ValueError("max_retries must be >= 0")
+        return v
+
+    class Config:
+        # Pydantic v1 style
+        schema_extra = {
+            "example": {"name": "default", "enabled": True, "max_retries": 3}
+        }
+PYEOF
+
+    # Tests
+    cat > "packages/${pkg}/tests/test_models.py" << PYEOF
+import pytest
+from src.models import ${pkg^}Config
+
+def test_valid_config():
+    c = ${pkg^}Config(name="test")
+    assert c.name == "test"
+    assert c.enabled == True
+    assert c.max_retries == 3
+
+def test_empty_name():
+    with pytest.raises(Exception):
+        ${pkg^}Config(name="")
+
+def test_negative_retries():
+    with pytest.raises(Exception):
+        ${pkg^}Config(name="test", max_retries=-1)
+
+def test_json_serialization():
+    c = ${pkg^}Config(name="test")
+    data = c.dict()
+    assert data["name"] == "test"
+PYEOF
+done
+```
+
+### Verificar que todo funciona con pydantic v1
+
+```bash
+pip install pydantic==1.10.0 --break-system-packages 2>/dev/null
+for pkg in packages/*/; do
+    echo "=== $(basename $pkg) ==="
+    cd "$pkg"
+    PYTHONPATH=. pytest tests/ -q 2>&1 | tail -1
+    cd ~/architect-labs/lab-23
+done
+```
+
+### Configuración
+
+**.architect.md**
+
+```markdown
+# Pydantic v1 -> v2 Migration Rules
+
+## Cambios necesarios
+- @validator -> @field_validator con mode='before'
+- class Config: -> model_config = ConfigDict(...)
+- schema_extra -> json_schema_extra
+- .dict() -> .model_dump()
+- .json() -> .model_dump_json()
+- from pydantic import validator -> from pydantic import field_validator
+- Import ConfigDict: from pydantic import ConfigDict
+
+## Obligatorio
+- Actualizar requirements.txt a pydantic>=2.0
+- Mantener la misma API pública
+- No cambiar nombres de clases ni campos
+- Los tests deben pasar (pueden necesitar ajustes a .dict() -> .model_dump())
+
+## Prohibido
+- No eliminar validaciones
+- No cambiar la lógica de validación
+- No ignorar errores con # type: ignore
+```
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+guardrails:
+  max_files_modified: 5
+
+skills:
+  auto_discover: true
+
+costs:
+  budget_usd: 0.50
+```
+
+```bash
+git add -A && git commit -m "initial: monorepo with 6 packages using pydantic v1"
+```
+
+</section>
+
+<section id="paso-1-instalar-v2">
+<h2 class="doc-article__h2" id="paso-1-instalar-v2">Paso 1: Instalar pydantic v2</h2>
+
+```bash
+pip install pydantic>=2.0 --break-system-packages 2>/dev/null
+```
+
+</section>
+
+<section id="paso-2-verificar-fallos">
+<h2 class="doc-article__h2" id="paso-2-verificar-fallos">Paso 2: Verificar que los tests fallan con v2</h2>
+
+```bash
+for pkg in packages/*/; do
+    echo "=== $(basename $pkg) ==="
+    cd "$pkg"
+    PYTHONPATH=. pytest tests/ -q 2>&1 | tail -1
+    cd ~/architect-labs/lab-23
+done
+# Todos deben fallar (pydantic v1 API rota en v2)
+```
+
+<Callout type="warning" title="Importante">
+Este es el escenario real: una breaking change en una dependencia rompe todos los paquetes del monorepo. Architect procesa cada uno en paralelo para minimizar el tiempo de migración.
+</Callout>
+
+</section>
+
+<section id="paso-3-manifest">
+<h2 class="doc-article__h2" id="paso-3-manifest">Paso 3: Crear manifest</h2>
+
+```bash
+find packages/ -maxdepth 1 -mindepth 1 -type d > packages-to-update.txt
+cat packages-to-update.txt
+```
+
+</section>
+
+<section id="paso-4-migracion">
+<h2 class="doc-article__h2" id="paso-4-migracion">Paso 4: Parallel migration con Ralph Loop</h2>
+
+```bash
+architect parallel \
+  "Migra este paquete de Pydantic v1 a Pydantic v2. \
+   Sigue las reglas de .architect.md. \
+   Actualiza models.py, tests, y requirements.txt. \
+   Los tests deben pasar con pydantic v2." \
+  --manifest packages-to-update.txt \
+  --workers 3 \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --report-file reports/migration.json
+```
+
+</section>
+
+<section id="paso-5-verificar">
+<h2 class="doc-article__h2" id="paso-5-verificar">Paso 5: Verificar</h2>
+
+```bash
+# Tests de TODOS los paquetes
+for pkg in packages/*/; do
+    echo "=== $(basename $pkg) ==="
+    cd "$pkg"
+    PYTHONPATH=. pytest tests/ -q 2>&1 | tail -1
+    cd ~/architect-labs/lab-23
+done
+
+# Verificar que usa API de pydantic v2
+for pkg in packages/*/src/models.py; do
+    echo "=== $pkg ==="
+    grep "field_validator\|model_config\|ConfigDict" "$pkg" \
+        || echo "  Still using v1 API"
+done
+
+# Reporte
+python3 -c "
+import json
+r = json.load(open('reports/migration.json'))
+success = sum(1 for x in r.get('results',[]) if x.get('success'))
+total = len(r.get('results',[]))
+print(f'Migrated: {success}/{total} packages')
+"
+```
+
+</section>
+
+<section id="paso-6-crear-pr">
+<h2 class="doc-article__h2" id="paso-6-crear-pr">Paso 6: Crear PR</h2>
+
+```bash
+git checkout -b migration/pydantic-v2
+git add -A
+git commit -m "chore: migrate all packages from pydantic v1 to v2
+
+- @validator to @field_validator
+- class Config to model_config = ConfigDict(...)
+- .dict() to .model_dump()
+- All tests passing with pydantic>=2.0"
+```
+
+<Callout type="info" title="Siguiente lab">
+Lab 24: AIOps Incident Remediation — Alerta de producción, diagnóstico y hotfix automático.
+</Callout>
+
+</section>

@@ -1,0 +1,204 @@
+---
+title: "Lab 04 — Tu Primer .architect.md"
+description: "Define convenciones del proyecto que Architect siempre respeta en cada ejecución."
+intro: "El archivo .architect.md se inyecta en el system prompt de cada ejecución, permitiendo que Architect siga las convenciones de tu equipo de forma automática."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "file-text"
+tags: ["Architect", "Conventions", "Config"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 04"]
+order: 24
+toc:
+  - { id: "objetivo", label: "Objetivo" }
+  - { id: "setup", label: "Setup" }
+  - { id: "ejercicio-1-crear-convenciones", label: "Ejercicio 1: Crear convenciones" }
+  - { id: "ejercicio-2-generar-codigo", label: "Ejercicio 2: Generar código" }
+  - { id: "ejercicio-3-verificar-aplicacion", label: "Ejercicio 3: Verificar aplicación" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="objetivo">
+<h2 class="doc-article__h2" id="objetivo">Objetivo</h2>
+
+Crear un `.architect.md` con convenciones del equipo y verificar que Architect las sigue en todas sus generaciones.
+
+<Callout type="info" title="Nivel: Básico">
+Duración estimada: 15 minutos. Features: `.architect.md`, `skills`.
+</Callout>
+
+</section>
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+```bash
+mkdir -p ~/architect-labs/lab-04 && cd ~/architect-labs/lab-04
+git init
+mkdir -p src tests
+```
+
+**src/user_service.py**
+
+```python
+class UserService:
+    def __init__(self):
+        self.users = []
+
+    def add_user(self, name, email):
+        self.users.append({"name": name, "email": email})
+
+    def get_all(self):
+        return self.users
+```
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+skills:
+  auto_discover: true
+```
+
+```bash
+git add -A && git commit -m "initial"
+```
+
+</section>
+
+<section id="ejercicio-1-crear-convenciones">
+<h2 class="doc-article__h2" id="ejercicio-1-crear-convenciones">Ejercicio 1: Crear .architect.md con convenciones</h2>
+
+Crea el archivo `.architect.md` en la raíz del proyecto con las reglas que Architect debe seguir:
+
+**.architect.md**
+
+```markdown
+# Project Conventions
+
+## Language & Style
+- All code MUST be in English (variable names, comments, docstrings)
+- Use Google-style docstrings for all public functions
+- Use type hints on ALL function signatures
+- Use f-strings for string formatting (never .format() or %)
+
+## Architecture Patterns
+- Services go in src/services/
+- Models/dataclasses go in src/models/
+- Use dataclasses (not dicts) for structured data
+- Use dependency injection (pass dependencies via __init__)
+
+## Error Handling
+- Always use custom exceptions (never bare raise or generic Exception)
+- Custom exceptions go in src/exceptions.py
+- Exception names end with Error (e.g., UserNotFoundError)
+
+## Testing
+- Tests mirror source structure: src/services/user.py -> tests/services/test_user.py
+- Use pytest fixtures for setup
+- Each test function tests ONE behavior
+- Test names: test_<function>_<scenario> (e.g., test_add_user_duplicate_email)
+
+## Logging
+- Use structlog (not print or stdlib logging)
+- Log at INFO for business events, DEBUG for technical details
+- Never log sensitive data (passwords, tokens, PII)
+
+## PROHIBIDO
+- No usar print() para logging
+- No usar dict cuando existe un dataclass apropiado
+- No usar Any como type hint si se puede ser más específico
+- No funciones de más de 30 líneas
+```
+
+<Callout type="tip" title="Consejo">
+El `.architect.md` es similar a un CLAUDE.md o AGENTS.md — define las reglas del proyecto que el LLM inyecta en cada ejecución como system prompt.
+</Callout>
+
+</section>
+
+<section id="ejercicio-2-generar-codigo">
+<h2 class="doc-article__h2" id="ejercicio-2-generar-codigo">Ejercicio 2: Generar código que siga las convenciones</h2>
+
+```bash
+architect run "Refactoriza src/user_service.py para seguir las convenciones \
+  del proyecto. Crea los modelos necesarios y mueve el servicio a la \
+  estructura correcta de directorios. Añade tests completos." \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+**Verificar que Architect creó:**
+
+- `src/models/user.py` con un `@dataclass` User (no un dict)
+- `src/services/user_service.py` con type hints y docstrings
+- `src/exceptions.py` con custom exceptions
+- `tests/services/test_user_service.py` con fixtures y naming correcto
+
+```bash
+# Verificar estructura
+find src/ tests/ -name "*.py" | sort
+
+# Verificar type hints
+grep -n "def " src/services/user_service.py
+# Todas las funciones deben tener type hints
+
+# Verificar dataclass
+grep -n "dataclass" src/models/user.py
+
+# Verificar docstrings
+grep -n '"""' src/services/user_service.py
+
+# Verificar que NO hay print()
+grep -rn "print(" src/ || echo "OK: sin prints"
+
+# Ejecutar tests
+export PYTHONPATH=.
+pytest tests/ -v
+```
+
+<Callout type="tip" title="Consejo">
+Usa `find` y `grep` para verificar que Architect siguió las convenciones. Esto es especialmente importante las primeras veces para calibrar la precisión.
+</Callout>
+
+</section>
+
+<section id="ejercicio-3-verificar-aplicacion">
+<h2 class="doc-article__h2" id="ejercicio-3-verificar-aplicacion">Ejercicio 3: Verificar que .architect.md se aplica siempre</h2>
+
+Pide algo que violaría las convenciones:
+
+```bash
+architect run "Añade una función que busque usuarios por nombre. \
+  Devuelve una lista de diccionarios con los resultados." \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+**Qué observar:** Aunque el prompt dice "diccionarios", Architect debería devolver una lista de `User` dataclass porque `.architect.md` dice "No usar dict cuando existe un dataclass apropiado".
+
+<Callout type="warning" title="Importante">
+Las convenciones del `.architect.md` son reglas blandas que guían al LLM — no bloquean como los guardrails. El LLM las seguirá en la mayoría de los casos, pero no están garantizadas al 100%.
+</Callout>
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Concepto | Descripción |
+|----------|-------------|
+| `.architect.md` | Se inyecta automáticamente en el system prompt |
+| Skills auto_discover | Busca `.architect.md` en la raíz del proyecto |
+| Convenciones | Son reglas blandas que guían al LLM (no bloquean como guardrails) |
+
+<Callout type="info" title="Siguiente lab">
+Lab 05: Reports & Exit Codes — Genera reportes JSON de cada ejecución para CI/CD.
+</Callout>
+
+</section>

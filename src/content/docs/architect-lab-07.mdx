@@ -1,0 +1,278 @@
+---
+title: "Lab 07 — Ralph Loop: Fix → Test → Verify"
+description: "El corazón de Architect: ejecuta, verifica con tests, itera con contexto limpio hasta que pase."
+intro: "El Ralph Loop ejecuta una tarea, verifica con un comando externo (tests/lint/build), y si falla, itera con contexto limpio hasta que pase o se agote el budget."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "repeat"
+tags: ["Architect", "Loop", "Testing"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 07"]
+order: 27
+toc:
+  - { id: "concepto-clave", label: "Concepto clave" }
+  - { id: "setup", label: "Setup" }
+  - { id: "ejercicio-1-ralph-loop-basico", label: "Ejercicio 1: Ralph Loop básico" }
+  - { id: "ejercicio-2-multiples-checks", label: "Ejercicio 2: Múltiples checks" }
+  - { id: "ejercicio-3-presupuesto", label: "Ejercicio 3: Observar presupuesto" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="concepto-clave">
+<h2 class="doc-article__h2" id="concepto-clave">Concepto clave</h2>
+
+<Callout type="info" title="Nivel: Intermedio">
+Duración estimada: 30 minutos. Features: `loop`, `guardrails`, `budget`, `reports`.
+</Callout>
+
+El Ralph Loop es el motor central de Architect para corrección autónoma:
+
+```text
+Iteración 1: LLM aplica fix → pytest falla → error log al contexto
+Iteración 2: LLM lee error → aplica nuevo fix → pytest falla → error log
+Iteración 3: LLM lee nuevo error → aplica fix → pytest PASA → ÉXITO
+```
+
+Cada iteración usa **contexto limpio**: solo recibe la spec original, el diff acumulado y los errores de la última iteración. No arrastra todo el historial.
+
+</section>
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+```bash
+mkdir -p ~/architect-labs/lab-07 && cd ~/architect-labs/lab-07
+git init && mkdir -p src tests
+```
+
+### Crear proyecto con bugs intencionados
+
+**src/shopping_cart.py**
+
+```python
+class ShoppingCart:
+    def __init__(self):
+        self.items = []
+
+    def add_item(self, name, price, quantity=1):
+        """Añade un item al carrito."""
+        self.items.append({
+            "name": name,
+            "price": price,
+            "quantity": quantity
+        })
+
+    def remove_item(self, name):
+        """Elimina un item por nombre."""
+        # BUG: No maneja el caso de item no encontrado
+        for i, item in enumerate(self.items):
+            if item["name"] == name:
+                self.items.pop(i)
+
+    def get_total(self):
+        """Calcula el total del carrito."""
+        total = 0
+        for item in self.items:
+            # BUG: No multiplica por quantity
+            total += item["price"]
+        return total
+
+    def apply_discount(self, percentage):
+        """Aplica un descuento porcentual al total."""
+        # BUG: No valida que el porcentaje esté entre 0-100
+        # BUG: Modifica precios originales en vez de calcular
+        for item in self.items:
+            item["price"] = item["price"] * (1 - percentage / 100)
+
+    def get_item_count(self):
+        """Retorna el número total de items."""
+        # BUG: Retorna len(items) en vez de sumar quantities
+        return len(self.items)
+```
+
+**tests/test_cart.py**
+
+```python
+import pytest
+from src.shopping_cart import ShoppingCart
+
+@pytest.fixture
+def cart():
+    c = ShoppingCart()
+    c.add_item("Apple", 1.50, quantity=3)
+    c.add_item("Banana", 0.75, quantity=2)
+    c.add_item("Orange", 2.00, quantity=1)
+    return c
+
+def test_add_item(cart):
+    assert len(cart.items) == 3
+
+def test_get_total(cart):
+    # 1.50*3 + 0.75*2 + 2.00*1 = 4.50 + 1.50 + 2.00 = 8.00
+    assert cart.get_total() == 8.00
+
+def test_get_item_count(cart):
+    # 3 + 2 + 1 = 6 items total
+    assert cart.get_item_count() == 6
+
+def test_remove_item(cart):
+    cart.remove_item("Banana")
+    assert len(cart.items) == 2
+    assert cart.get_total() == 6.50  # 4.50 + 2.00
+
+def test_remove_nonexistent_item(cart):
+    # No debe lanzar excepción
+    cart.remove_item("Mango")
+    assert len(cart.items) == 3
+
+def test_apply_discount(cart):
+    original_total = cart.get_total()
+    cart.apply_discount(10)
+    assert cart.get_total() == pytest.approx(original_total * 0.9)
+    # Los precios originales no deben cambiar
+    cart.apply_discount(0)
+    assert cart.get_total() == pytest.approx(original_total * 0.9)
+
+def test_apply_discount_invalid():
+    cart = ShoppingCart()
+    cart.add_item("Test", 10.00)
+    with pytest.raises(ValueError):
+        cart.apply_discount(150)
+    with pytest.raises(ValueError):
+        cart.apply_discount(-10)
+```
+
+Verifica que los tests fallan:
+
+```bash
+export PYTHONPATH=.
+pytest tests/test_cart.py -v
+# Deberían fallar varios tests
+```
+
+```bash
+git add -A && git commit -m "initial: cart with bugs"
+```
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+guardrails:
+  protected_files:
+    - "tests/**"   # No puede modificar los tests — solo el código
+  max_files_modified: 3
+
+costs:
+  budget_usd: 0.50
+```
+
+<Callout type="warning" title="Importante">
+Los tests están protegidos con `protected_files`. Architect solo puede modificar el código fuente, no los tests. Esto asegura que la corrección es real y no un "arreglo" de los tests.
+</Callout>
+
+</section>
+
+<section id="ejercicio-1-ralph-loop-basico">
+<h2 class="doc-article__h2" id="ejercicio-1-ralph-loop-basico">Ejercicio 1: Ralph Loop básico</h2>
+
+```bash
+architect loop "Corrige todos los bugs en src/shopping_cart.py. \
+  Los tests en tests/test_cart.py definen el comportamiento correcto. \
+  No modifiques los tests — solo el código fuente." \
+  --check "pytest tests/test_cart.py -v" \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --max-iterations 5 \
+  --budget 0.50 \
+  --report-file reports/ralph-run.json
+```
+
+**Qué observar:**
+
+- Architect itera: lee errores de pytest → aplica fix → re-ejecuta pytest
+- Cada iteración tiene contexto limpio con solo el diff acumulado
+- Para cuando **TODOS** los tests pasan (exit code 0 del `--check`)
+- O cuando alcanza max_iterations o budget
+
+```bash
+# Verificar resultado
+pytest tests/test_cart.py -v
+# Todos los tests deben pasar
+
+# Ver el reporte
+cat reports/ralph-run.json | python -m json.tool
+
+# Ver qué cambió
+git diff src/shopping_cart.py
+```
+
+<Callout type="tip" title="Consejo">
+El reporte JSON muestra el número de iteraciones, coste por iteración, y los errores de cada paso. Úsalo para entender cómo Architect razona sobre los fallos.
+</Callout>
+
+</section>
+
+<section id="ejercicio-2-multiples-checks">
+<h2 class="doc-article__h2" id="ejercicio-2-multiples-checks">Ejercicio 2: Ralph Loop con múltiples checks</h2>
+
+```bash
+git checkout -- src/shopping_cart.py  # Reset al código con bugs
+
+architect loop "Corrige los bugs en src/shopping_cart.py" \
+  --check "pytest tests/test_cart.py -v" \
+  --check "ruff check src/shopping_cart.py" \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --max-iterations 7 \
+  --budget 0.50
+```
+
+**Diferencia:** Ahora **AMBOS** checks deben pasar: pytest Y ruff. El loop no termina hasta que los dos comandos devuelvan exit code 0.
+
+</section>
+
+<section id="ejercicio-3-presupuesto">
+<h2 class="doc-article__h2" id="ejercicio-3-presupuesto">Ejercicio 3: Observar el presupuesto</h2>
+
+```bash
+git checkout -- src/shopping_cart.py  # Reset
+
+architect loop "Corrige los bugs en src/shopping_cart.py" \
+  --check "pytest tests/test_cart.py -v" \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --max-iterations 20 \
+  --budget 0.10 \
+  --report-file reports/budget-test.json
+```
+
+**Qué observar:** Con $0.10 de budget, Architect se detendrá antes si las iteraciones LLM son caras. Revisa el reporte para ver cuánto gastó por iteración.
+
+<Callout type="warning" title="Importante">
+El loop se detiene por el primero que se alcance: `--max-iterations` o `--budget`. Configura ambos para tener doble safety net en CI/CD.
+</Callout>
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Flag | Descripción |
+|------|-------------|
+| `architect loop` | Ejecuta tarea en modo Ralph Loop |
+| `--check CMD` | Comando de verificación (puede repetirse) |
+| `--max-iterations N` | Máximo de iteraciones del loop |
+| `--budget N.NN` | Límite de coste en USD |
+| Contexto limpio | Cada iteración recibe spec + diff + último error |
+
+<Callout type="info" title="Siguiente lab">
+Lab 08: Pipeline Mode — Workflows multi-step definidos en YAML.
+</Callout>
+
+</section>

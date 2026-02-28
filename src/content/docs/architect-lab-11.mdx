@@ -1,0 +1,225 @@
+---
+title: "Lab 11 — Sessions & Checkpoints"
+description: "Persiste el estado de ejecución, reanuda tareas interrumpidas y haz rollback a puntos seguros."
+intro: "Aprende a usar sesiones para guardar el estado de ejecución de Architect, reanudar tareas interrumpidas por budget o fallos, y hacer rollback a checkpoints seguros."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "bookmark"
+tags: ["Architect", "Sessions", "Checkpoints"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 11"]
+order: 31
+toc:
+  - { id: "setup", label: "Setup" }
+  - { id: "ejercicio-1-auto-save", label: "Ejercicio 1: Sesión con auto-save" }
+  - { id: "ejercicio-2-checkpoints-pipeline", label: "Ejercicio 2: Checkpoints en pipeline" }
+  - { id: "ejercicio-3-rollback", label: "Ejercicio 3: Rollback a checkpoint" }
+  - { id: "ejercicio-4-resume", label: "Ejercicio 4: Resume de sesión" }
+  - { id: "ejercicio-5-cleanup", label: "Ejercicio 5: Limpiar sesiones" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+<Callout type="info" title="Nivel: Intermedio">
+Duración estimada: 25 minutos. Features: `sessions`, `checkpoints`, `resume`.
+</Callout>
+
+```bash
+mkdir -p ~/architect-labs/lab-11 && cd ~/architect-labs/lab-11
+git init && mkdir -p src tests
+```
+
+**src/inventory.py**
+
+```python
+class Inventory:
+    def __init__(self):
+        self.products = {}
+
+    def add_product(self, sku, name, price, stock):
+        self.products[sku] = {"name": name, "price": price, "stock": stock}
+```
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1
+  api_key_env: LITELLM_API_KEY
+
+sessions:
+  auto_save: true
+  cleanup_after_days: 7
+```
+
+```bash
+git add -A && git commit -m "initial"
+```
+
+</section>
+
+<section id="ejercicio-1-auto-save">
+<h2 class="doc-article__h2" id="ejercicio-1-auto-save">Ejercicio 1: Sesión con auto-save</h2>
+
+```bash
+architect run "Expande src/inventory.py con métodos: remove_product, \
+  update_stock, get_product, search_by_name, get_low_stock(threshold). \
+  Añade tests completos." \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+Después de ejecutar, lista las sesiones guardadas:
+
+```bash
+architect sessions
+# Muestra ID, timestamp, status, task
+```
+
+<Callout type="tip" title="Consejo">
+Con `auto_save: true`, cada ejecución guarda su estado automáticamente. Esto permite reanudar ejecuciones interrumpidas sin perder progreso.
+</Callout>
+
+</section>
+
+<section id="ejercicio-2-checkpoints-pipeline">
+<h2 class="doc-article__h2" id="ejercicio-2-checkpoints-pipeline">Ejercicio 2: Checkpoints en pipeline</h2>
+
+Crea un pipeline con checkpoints:
+
+**pipelines/inventory-expand.yaml**
+
+```yaml
+name: inventory-expansion
+steps:
+  - name: add-search
+    agent: build
+    task: >
+      Añade a src/inventory.py:
+      - search_products(query) que busque por nombre
+      - filter_by_price(min_price, max_price)
+      Añade tests para estas funciones.
+    checkpoint: true
+
+  - name: add-reporting
+    agent: build
+    task: >
+      Añade a src/inventory.py:
+      - get_total_value() que calcule el valor total del inventario
+      - get_report() que genere un resumen con totales
+      Añade tests para estas funciones.
+    checkpoint: true
+
+  - name: add-export
+    agent: build
+    task: >
+      Añade a src/inventory.py:
+      - export_csv(filepath) que exporte el inventario a CSV
+      - import_csv(filepath) que importe desde CSV
+      Añade tests para estas funciones.
+    checkpoint: true
+```
+
+```bash
+architect pipeline pipelines/inventory-expand.yaml \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+Verifica los checkpoints:
+
+```bash
+# Los checkpoints son git commits con tag especial
+git log --oneline | head -10
+# Deberías ver commits tipo: architect:checkpoint:step-1
+```
+
+</section>
+
+<section id="ejercicio-3-rollback">
+<h2 class="doc-article__h2" id="ejercicio-3-rollback">Ejercicio 3: Rollback a checkpoint</h2>
+
+Si el step 3 (export) introdujo un bug:
+
+```bash
+# Listar checkpoints
+git log --oneline --grep="architect:checkpoint"
+
+# Rollback al checkpoint del step 2
+git log --oneline --grep="architect:checkpoint:step-2"
+# Copia el hash del commit
+git reset --hard <HASH_DEL_CHECKPOINT_STEP_2>
+
+# Verificar que estamos en el estado post-step-2
+pytest tests/ -v
+```
+
+<Callout type="warning" title="Importante">
+`git reset --hard` descarta todos los cambios posteriores al checkpoint. Úsalo solo cuando estés seguro de que quieres descartar el trabajo posterior.
+</Callout>
+
+</section>
+
+<section id="ejercicio-4-resume">
+<h2 class="doc-article__h2" id="ejercicio-4-resume">Ejercicio 4: Resume de sesión interrumpida</h2>
+
+Simula una interrupción con budget bajo:
+
+```bash
+architect run "Genera 5 módulos auxiliares para inventory: \
+  validators.py, formatters.py, exporters.py, importers.py, analytics.py. \
+  Cada uno con al menos 3 funciones y tests." \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  --budget 0.05
+# Se detendrá por budget
+
+# Ver la sesión guardada
+architect sessions
+# Copiar el SESSION_ID
+
+# Reanudar la sesión
+architect resume <SESSION_ID> \
+  --budget 0.20
+```
+
+<Callout type="tip" title="Consejo">
+Al reanudar, Architect retoma desde donde se quedó con todo el contexto previo. Puedes aumentar el budget para que tenga suficiente margen para completar.
+</Callout>
+
+</section>
+
+<section id="ejercicio-5-cleanup">
+<h2 class="doc-article__h2" id="ejercicio-5-cleanup">Ejercicio 5: Limpiar sesiones antiguas</h2>
+
+```bash
+# Ver todas las sesiones
+architect sessions
+
+# Limpiar sesiones de más de 1 día
+architect cleanup --older-than 1
+```
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Concepto | Descripción |
+|----------|-------------|
+| `sessions.auto_save` | Guarda estado automáticamente |
+| `architect sessions` | Lista sesiones guardadas |
+| `architect resume ID` | Reanuda una sesión interrumpida |
+| `checkpoint: true` | Crea git commit checkpoint en ese step |
+| `architect cleanup` | Limpia sesiones antiguas |
+| Rollback | `git reset --hard` al commit del checkpoint |
+
+<Callout type="info" title="Siguiente lab">
+Lab 12: Code Rules Deep Dive — Patrones bloqueados y warnings en el código.
+</Callout>
+
+</section>

@@ -1,0 +1,219 @@
+---
+title: "Lab 01 — Hello Architect"
+description: "Tu primera ejecución con Architect: setup mínimo, primer run y verificación del resultado."
+intro: "Configura Architect desde cero, ejecuta una tarea simple y entiende el flujo básico: prompt → LLM → tool calls → resultado."
+category: "ARCHITECT LABS"
+categoryColor: "cyan"
+icon: "terminal"
+tags: ["Architect", "CLI", "Run"]
+breadcrumb: ["Docs", "Architect Labs", "Lab 01"]
+order: 21
+toc:
+  - { id: "objetivo", label: "Objetivo" }
+  - { id: "setup", label: "Setup" }
+  - { id: "ejercicio-1-primera-ejecucion", label: "Ejercicio 1: Primera ejecución" }
+  - { id: "ejercicio-2-modo-yolo", label: "Ejercicio 2: Modo yolo" }
+  - { id: "ejercicio-3-verbose-mode", label: "Ejercicio 3: Verbose mode" }
+  - { id: "resultado-esperado", label: "Resultado esperado" }
+  - { id: "resumen", label: "Resumen" }
+---
+
+import Callout from '../../components/Callout.astro';
+
+<section id="objetivo">
+<h2 class="doc-article__h2" id="objetivo">Objetivo</h2>
+
+Configurar Architect desde cero, ejecutar una tarea simple y entender el flujo básico: **prompt → LLM → tool calls → resultado**.
+
+<Callout type="info" title="Nivel: Básico">
+Duración estimada: 15 minutos. Feature principal: `architect run`.
+</Callout>
+
+</section>
+
+<section id="setup">
+<h2 class="doc-article__h2" id="setup">Setup</h2>
+
+```bash
+mkdir -p ~/architect-labs/lab-01 && cd ~/architect-labs/lab-01
+git init
+```
+
+### 1. Crear el proyecto Python de ejemplo
+
+```bash
+mkdir -p src tests
+```
+
+**src/calculator.py**
+
+```python
+def add(a, b):
+    return a + b
+
+def subtract(a, b):
+    return a - b
+
+def multiply(a, b):
+    return a * b
+```
+
+**tests/test_calculator.py**
+
+```python
+from src.calculator import add, subtract, multiply
+
+def test_add():
+    assert add(2, 3) == 5
+
+def test_subtract():
+    assert subtract(5, 3) == 2
+
+def test_multiply():
+    assert multiply(3, 4) == 12
+```
+
+### 2. Crear configuración de Architect
+
+**.architect.yaml**
+
+```yaml
+llm:
+  model: openai/gpt-4.1
+  api_base: http://localhost:4000/v1   # LiteLLM proxy
+  api_key_env: LITELLM_API_KEY
+
+logging:
+  level: human
+```
+
+### 3. Verificar que el proyecto funciona
+
+```bash
+export PYTHONPATH=.
+pytest tests/ -v
+# Deberían pasar los 3 tests
+```
+
+### 4. Commit inicial
+
+```bash
+git add -A
+git commit -m "initial: calculator project"
+```
+
+</section>
+
+<section id="ejercicio-1-primera-ejecucion">
+<h2 class="doc-article__h2" id="ejercicio-1-primera-ejecucion">Ejercicio 1: Primera ejecución con run</h2>
+
+Pide a Architect que añada una función `divide` con manejo de división por cero:
+
+```bash
+architect run "Añade una función divide(a, b) en src/calculator.py \
+  que divida a entre b. Si b es 0, lanza un ValueError con mensaje \
+  'Cannot divide by zero'. Añade tests para la función en \
+  tests/test_calculator.py incluyendo el caso de error." \
+  --config .architect.yaml \
+  --confirm-mode confirm
+```
+
+**Qué observar:**
+
+- Architect muestra cada tool call que quiere hacer (leer archivo, editar, etc.)
+- En modo `confirm` te pide aprobación antes de cada escritura
+- Al terminar, verifica los cambios con:
+
+```bash
+git diff
+pytest tests/ -v
+```
+
+<Callout type="tip" title="Consejo">
+El modo `confirm` es ideal para aprender cómo funciona Architect internamente. Te permite ver y aprobar cada paso del proceso.
+</Callout>
+
+</section>
+
+<section id="ejercicio-2-modo-yolo">
+<h2 class="doc-article__h2" id="ejercicio-2-modo-yolo">Ejercicio 2: Modo yolo (sin confirmación)</h2>
+
+Ahora pide otra feature sin confirmación manual:
+
+```bash
+architect run "Añade una función power(base, exponent) en src/calculator.py \
+  que calcule base^exponent usando el operador **. \
+  Añade tests en tests/test_calculator.py con al menos 3 casos: \
+  positivos, exponente 0, y exponente negativo." \
+  --config .architect.yaml \
+  --confirm-mode yolo
+```
+
+**Qué observar:**
+
+- Ejecuta sin pedir confirmación
+- Más rápido pero sin control paso a paso
+- Ideal para tareas bien definidas y de bajo riesgo
+
+```bash
+pytest tests/ -v
+# Deberían pasar todos los tests (viejos + nuevos)
+```
+
+<Callout type="warning" title="Importante">
+El modo `yolo` ejecuta sin confirmación. Úsalo solo con tareas bien definidas y de bajo riesgo, o cuando tengas guardrails configurados (Lab 02).
+</Callout>
+
+</section>
+
+<section id="ejercicio-3-verbose-mode">
+<h2 class="doc-article__h2" id="ejercicio-3-verbose-mode">Ejercicio 3: Verbose mode</h2>
+
+Repite con `-v` para ver los logs detallados:
+
+```bash
+architect run "Añade una función modulo(a, b) en src/calculator.py \
+  que devuelva a % b. Si b es 0, lanza ValueError." \
+  --config .architect.yaml \
+  --confirm-mode yolo \
+  -v
+```
+
+**Qué observar en verbose:**
+
+- Tokens consumidos por llamada
+- Tools disponibles
+- Prompts internos
+- Coste estimado
+
+</section>
+
+<section id="resultado-esperado">
+<h2 class="doc-article__h2" id="resultado-esperado">Resultado esperado</h2>
+
+Al completar los tres ejercicios, tu proyecto debería tener:
+
+```text
+src/calculator.py        → 6 funciones: add, subtract, multiply, divide, power, modulo
+tests/test_calculator.py → Tests para todas las funciones
+pytest                   → Todos los tests pasan
+```
+
+</section>
+
+<section id="resumen">
+<h2 class="doc-article__h2" id="resumen">Resumen</h2>
+
+| Concepto | Descripción |
+|----------|-------------|
+| `architect run` | Ejecuta una tarea única de principio a fin |
+| `--config` | Archivo de configuración YAML |
+| `--confirm-mode confirm` | Aprobación manual de cada escritura |
+| `--confirm-mode yolo` | Sin confirmación, ejecución automática |
+| `-v` | Verbose: muestra detalles internos |
+
+<Callout type="info" title="Siguiente lab">
+Lab 02: Guardrails Fundamentals — Aprende a proteger archivos y limitar lo que Architect puede hacer.
+</Callout>
+
+</section>
